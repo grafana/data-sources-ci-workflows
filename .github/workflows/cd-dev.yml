@@ -1,0 +1,107 @@
+# Description:
+# Publish the latest build to the internal Plugin Catalog (dev environment), then trigger
+# an Argo CD workflow to deploy the published artifact.
+# Intended as a main-branch-only CD pipeline; callers are responsible for only invoking
+# on pushes to main.
+
+name: Plugins - Publish to Dev Catalog and Deploy
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: Go toolchain version to use.
+        type: string
+        required: true
+      golangci-lint-version:
+        description: golangci-lint version to use.
+        type: string
+        required: true
+      environment:
+        description: Plugin Catalog environment to publish to.
+        type: string
+        required: false
+        default: "dev"
+      scopes:
+        description: |
+          Publishing scope — the Grafana Cloud instance the plugin is provisioned into.
+          Used to restrict where the artifact is published.
+        type: string
+        required: false
+        default: "grafana_cloud"
+      argo-instance:
+        description: Argo CD instance to target.
+        type: string
+        required: false
+        default: "ops"
+      argo-namespace:
+        description: Argo CD namespace where the WorkflowTemplate lives.
+        type: string
+        required: false
+        default: "grafana-datasources-cd"
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-to-catalog:
+    name: Publish to Dev Catalog
+    # Skip when Renovate auto-merges — those commits don't need a dev catalog deployment.
+    if: ${{ github.actor != 'renovate-sh-app[bot]' }}
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v5.1.0
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    with:
+      disable-docs-publishing: true
+      disable-github-release: true
+      environment: ${{ inputs.environment }}
+      go-version: ${{ inputs.go-version }}
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
+      plugin-version-suffix: ${{ github.sha }}
+      run-playwright: false
+      scopes: ${{ inputs.scopes }}
+
+  trigger-argo-workflow:
+    name: Trigger Argo Workflow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: publish-to-catalog
+    if: ${{ github.actor != 'renovate-sh-app[bot]' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Read plugin ID
+        id: plugin
+        run: |
+          set -euo pipefail
+          echo "id=$(jq -er .id ./src/plugin.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Read package version
+        id: pkg
+        run: |
+          set -euo pipefail
+          echo "version=$(jq -er .version ./package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger workflow
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@b513eb1dfd9becfa671a41e55063cdd5c0a08031 # trigger-argo-workflow/v1.2.2
+        with:
+          instance: ${{ inputs.argo-instance }}
+          namespace: ${{ inputs.argo-namespace }}
+          workflow_template: ${{ steps.plugin.outputs.id }}-${{ inputs.environment }}
+          parameters: |
+            dockertag=${{ steps.pkg.outputs.version }}+${{ github.sha }}
+            prCommentContext=triggered-by-push-to-main datasource=${{ steps.plugin.outputs.id }}
+            commit_author=grafana-delivery-bot
