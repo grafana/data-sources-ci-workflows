@@ -58,6 +58,7 @@ jobs:
       attestations: write
       contents: write
       id-token: write
+      pull-requests: read
     with:
       disable-docs-publishing: true
       disable-github-release: true
