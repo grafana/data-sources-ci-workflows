@@ -45,7 +45,7 @@ on:
           Override to pin a specific version or test against a newer release.
         type: string
         required: false
-        default: "1.0.6"
+        default: "1.0.9"
       grafana-readiness-timeout:
         description: |
           How long (in seconds) to wait for the Grafana Cloud instance to become reachable before failing.
