@@ -39,10 +39,23 @@ on:
         type: string
         required: false
         default: "grafana-datasources-cd"
+      plugin-directory:
+        description: |
+          Directory containing plugin.json and package.json, relative to the repo root.
+          Defaults to src, which is the standard layout for Grafana datasource plugins.
+        type: string
+        required: false
+        default: "src"
 
 defaults:
   run:
     shell: bash
+
+# Prevent duplicate runs for the same ref. Do not cancel in-progress runs —
+# a deploy already underway should finish rather than be left in a partial state.
+concurrency:
+  group: cd-dev-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -74,7 +87,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: publish-to-catalog
-    if: ${{ github.actor != 'renovate-sh-app[bot]' }}
     permissions:
       contents: read
       id-token: write
@@ -88,7 +100,7 @@ jobs:
         id: plugin
         run: |
           set -euo pipefail
-          echo "id=$(jq -er .id ./src/plugin.json)" >> "$GITHUB_OUTPUT"
+          echo "id=$(jq -er .id ./${{ inputs.plugin-directory }}/plugin.json)" >> "$GITHUB_OUTPUT"
 
       - name: Read package version
         id: pkg
