@@ -98,9 +98,11 @@ jobs:
 
       - name: Read plugin ID
         id: plugin
+        env:
+          PLUGIN_DIR: ${{ inputs.plugin-directory }}
         run: |
           set -euo pipefail
-          echo "id=$(jq -er .id ./${{ inputs.plugin-directory }}/plugin.json)" >> "$GITHUB_OUTPUT"
+          echo "id=$(jq -er .id "./${PLUGIN_DIR}/plugin.json")" >> "$GITHUB_OUTPUT"
 
       - name: Read package version
         id: pkg
