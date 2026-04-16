@@ -1,3 +1,3 @@
 # data-sources-ci-workflows
 
-This repository contains GitHub Actions workflows for testing and deploying **Grafana Labs-owned** data sources in CI.
+Reusable GitHub Actions workflows for testing and deploying **Grafana Labs-owned** data source plugins in CI. Maintained by [@grafana/data-sources-plugins](https://github.com/orgs/grafana/teams/data-sources-plugins).
