@@ -66,7 +66,7 @@ jobs:
     name: Publish to Dev Catalog
     # Skip when Renovate auto-merges — those commits don't need a dev catalog deployment.
     if: ${{ github.actor != 'renovate-sh-app[bot]' }}
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@e62d1bb2cac32d9de65197c7b11eb9f6010bfc14 # ci-cd-workflows/v7.2.0
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@5e956e188229a1e43afb69ab98091ff29e45651d # ci-cd-workflows/v7.3.1
     permissions:
       attestations: write
       contents: write
