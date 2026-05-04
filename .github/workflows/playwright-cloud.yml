@@ -26,9 +26,26 @@ on:
         description: |
           Datasource-specific Vault secrets, in get-vault-secrets repo_secrets format.
           Each line: ENV_VAR_NAME=vault-path:field
+          Read from ci/data/repo/grafana/<repo>/... with the shared vault-github-actions role.
           All listed env vars are injected into the Bench container and forwarded to Playwright.
         type: string
         required: false
+      data-sources-secrets:
+        description: |
+          Instance secrets published by grafana/data-sources infra, read via hashicorp/vault-action
+          (get-vault-secrets CANNOT read these — different path and role). Format is the
+          vault-action `secrets:` format, one entry per line:
+            ci/data/data-sources/<repo>/<instance> <field> | ENV_VAR_NAME
+          All listed env vars are injected into the Bench container and forwarded to Playwright.
+        type: string
+        required: false
+      data-sources-role:
+        description: |
+          Vault role used to read data-sources-secrets. Defaults to the repo's dedicated reader
+          role (data-sources-reader-<repo>); override only if your role name differs.
+        type: string
+        required: false
+        default: ""
       bench-prepare-cmd:
         description: Shell command Bench runs to prepare the test environment (install deps and browsers).
         type: string
@@ -124,6 +141,35 @@ jobs:
             printf '%s<<%s\n%s\n%s\n' "$key" "$delimiter" "$value" "$delimiter" >> "$GITHUB_ENV"
           done <<< "$REPO_SECRETS_INPUT"
 
+      # Default the reader role to data-sources-reader-<repo>. Derived from GITHUB_REPOSITORY
+      # (always set, unlike github.event.repository.name on schedule events).
+      - name: Resolve data-sources Vault role
+        id: ds-role
+        if: inputs.data-sources-secrets != ''
+        env:
+          ROLE_OVERRIDE: ${{ inputs.data-sources-role }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${ROLE_OVERRIDE:-}" ]]; then
+            role="$ROLE_OVERRIDE"
+          else
+            role="data-sources-reader-${GITHUB_REPOSITORY#grafana/}"
+          fi
+          echo "role=$role" >> "$GITHUB_OUTPUT"
+
+      - name: Get data-sources instance secrets from Vault
+        id: get-data-sources-secrets
+        if: inputs.data-sources-secrets != ''
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: https://vault-github-actions.grafana-ops.net
+          method: jwt
+          path: github-actions-oidc
+          role: ${{ steps.ds-role.outputs.role }}
+          jwtGithubAudience: https://vault-github-actions.grafana-ops.net
+          # exportEnv (default true) writes each `| ENV` name to $GITHUB_ENV for later steps.
+          secrets: ${{ inputs.data-sources-secrets }}
+
       - name: Wait for Grafana to be reachable
         id: wait-for-grafana
         uses: grafana/plugin-actions/wait-for-grafana@c8ad89b7d81f8cb9967bb65e444d85f5b3d7c674 # wait-for-grafana/v1.0.2
@@ -147,26 +193,39 @@ jobs:
           BENCH_SERVICE_VERSION: ${{ inputs.service-version }}
           BENCH_SUITE_NAME: ${{ github.repository }}/e2e
           REPO_SECRETS_INPUT: ${{ inputs.repo-secrets }}
+          DATA_SOURCES_SECRETS_INPUT: ${{ inputs.data-sources-secrets }}
         run: |
           set -euo pipefail
 
-          REPO_SECRET_DOCKER_FLAGS=()
-          REPO_SECRET_TEST_ENV_FLAGS=()
+          # Forward every secret env var into the Bench container and on to Playwright.
+          # repo-secrets lines are `ENV=path:field`; data-sources-secrets lines are the
+          # vault-action format `path field | ENV`. Collect the ENV name from each.
+          SECRET_DOCKER_FLAGS=()
+          SECRET_TEST_ENV_FLAGS=()
+          add_secret_env() {
+            local key
+            key="$(printf '%s' "$1" | tr -d '[:space:];')"
+            [[ -z "$key" ]] && return
+            SECRET_DOCKER_FLAGS+=("-e" "$key")
+            SECRET_TEST_ENV_FLAGS+=("--test-env" "$key")
+          }
           if [[ -n "${REPO_SECRETS_INPUT:-}" ]]; then
             while IFS= read -r line; do
-              key="${line%%=*}"
-              key="${key// /}"
-              [[ -z "$key" ]] && continue
-              REPO_SECRET_DOCKER_FLAGS+=("-e" "$key")
-              REPO_SECRET_TEST_ENV_FLAGS+=("--test-env" "$key")
+              add_secret_env "${line%%=*}"
             done <<< "$REPO_SECRETS_INPUT"
+          fi
+          if [[ -n "${DATA_SOURCES_SECRETS_INPUT:-}" ]]; then
+            while IFS= read -r line; do
+              [[ "$line" != *"|"* ]] && continue
+              add_secret_env "${line##*|}"
+            done <<< "$DATA_SOURCES_SECRETS_INPUT"
           fi
 
           docker run \
             --network=host \
             --rm \
             --volume "$PWD:/tests" \
-            "${REPO_SECRET_DOCKER_FLAGS[@]}" \
+            "${SECRET_DOCKER_FLAGS[@]}" \
             -e DS_PDC_NETWORK_NAME \
             -e GRAFANA_ADMIN_PASSWORD \
             -e GRAFANA_ADMIN_USER \
@@ -187,7 +246,7 @@ jobs:
             --suite-name "$BENCH_SUITE_NAME" \
             --suite-path /tests \
             --test-env CI=true \
-            "${REPO_SECRET_TEST_ENV_FLAGS[@]}" \
+            "${SECRET_TEST_ENV_FLAGS[@]}" \
             --test-env DS_PDC_NETWORK_NAME \
             --test-env GRAFANA_ADMIN_PASSWORD \
             --test-env GRAFANA_ADMIN_USER \
