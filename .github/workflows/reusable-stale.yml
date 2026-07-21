@@ -6,7 +6,7 @@
 # exposed as inputs with defaults matching the original Data Source Plugins Squad
 # configuration, so most callers only need to reference the workflow.
 
-name: 'Close stale issues and PRs'
+name: "Close stale issues and PRs"
 
 on:
   workflow_call:
@@ -97,7 +97,7 @@ permissions: {}
 
 jobs:
   stale:
-    runs-on: ubuntu-arm64-small
+    runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
