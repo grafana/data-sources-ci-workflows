@@ -1,0 +1,122 @@
+# Description:
+# Reusable workflow that marks and closes stale issues and pull requests using
+# actions/stale.
+#
+# Callers typically trigger this on a `schedule`. All timings and messages are
+# exposed as inputs with defaults matching the original Data Source Plugins Squad
+# configuration, so most callers only need to reference the workflow.
+
+name: 'Close stale issues and PRs'
+
+on:
+  workflow_call:
+    inputs:
+      operations-per-run:
+        description: Maximum number of stale operations performed per run.
+        type: number
+        required: false
+        default: 750
+      ascending:
+        description: Start from the oldest issues/PRs when performing stale operations.
+        type: boolean
+        required: false
+        default: true
+      days-before-issue-stale:
+        description: Days of inactivity before an issue is marked stale.
+        type: number
+        required: false
+        default: 365
+      days-before-issue-close:
+        description: Days after being marked stale before an issue is closed.
+        type: number
+        required: false
+        default: 30
+      stale-issue-label:
+        description: Label applied to stale issues.
+        type: string
+        required: false
+        default: stale
+      exempt-issue-labels:
+        description: Comma-separated labels that exempt an issue from being marked stale.
+        type: string
+        required: false
+        default: no stalebot,type/epic
+      stale-issue-message:
+        description: Comment posted when an issue is marked stale.
+        type: string
+        required: false
+        default: >
+          This issue has been automatically marked as stale because it has not had
+          activity in the last year. It will be closed in 30 days if no further activity occurs. Please
+          feel free to leave a comment if you believe the issue is still relevant.
+          Thank you for your contributions!
+      close-issue-message:
+        description: Comment posted when a stale issue is closed.
+        type: string
+        required: false
+        default: >
+          This issue has been automatically closed because it has not had any further
+          activity in the last 30 days. Thank you for your contributions!
+      days-before-pr-stale:
+        description: Days of inactivity before a pull request is marked stale.
+        type: number
+        required: false
+        default: 30
+      days-before-pr-close:
+        description: Days after being marked stale before a pull request is closed.
+        type: number
+        required: false
+        default: 14
+      stale-pr-label:
+        description: Label applied to stale pull requests.
+        type: string
+        required: false
+        default: stale
+      exempt-pr-labels:
+        description: Comma-separated labels that exempt a pull request from being marked stale.
+        type: string
+        required: false
+        default: no stalebot
+      stale-pr-message:
+        description: Comment posted when a pull request is marked stale.
+        type: string
+        required: false
+        default: >
+          This pull request has been automatically marked as stale because it has not had
+          activity in the last 30 days. It will be closed in 2 weeks if no further activity occurs. Please
+          feel free to give a status update or ping for review. Thank you for your contributions!
+      close-pr-message:
+        description: Comment posted when a stale pull request is closed.
+        type: string
+        required: false
+        default: >
+          This pull request has been automatically closed because it has not had any further
+          activity in the last 2 weeks. Thank you for your contributions!
+
+permissions: {}
+
+jobs:
+  stale:
+    runs-on: ubuntu-arm64-small
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          operations-per-run: ${{ inputs.operations-per-run }}
+          # start from the oldest issues/PRs when performing stale operations
+          ascending: ${{ inputs.ascending }}
+          days-before-issue-stale: ${{ inputs.days-before-issue-stale }}
+          days-before-issue-close: ${{ inputs.days-before-issue-close }}
+          stale-issue-label: ${{ inputs.stale-issue-label }}
+          exempt-issue-labels: ${{ inputs.exempt-issue-labels }}
+          stale-issue-message: ${{ inputs.stale-issue-message }}
+          close-issue-message: ${{ inputs.close-issue-message }}
+          days-before-pr-stale: ${{ inputs.days-before-pr-stale }}
+          days-before-pr-close: ${{ inputs.days-before-pr-close }}
+          stale-pr-label: ${{ inputs.stale-pr-label }}
+          exempt-pr-labels: ${{ inputs.exempt-pr-labels }}
+          stale-pr-message: ${{ inputs.stale-pr-message }}
+          close-pr-message: ${{ inputs.close-pr-message }}
