@@ -10,6 +10,12 @@ name: Add issues & PRs to a GitHub project
 
 on:
   workflow_call:
+    inputs:
+      github-app:
+        description: GitHub App used to mint a token with access to the project.
+        type: string
+        required: false
+        default: grafana-oss-big-tent
 
 jobs:
   add-to-project:
@@ -22,7 +28,7 @@ jobs:
       - id: get-github-token
         uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
-          github_app: grafana-oss-big-tent
+          github_app: ${{ inputs.github-app }}
       - name: Add to project
         id: add-to-project
         uses: actions/add-to-project@828acb646a0a199a64596fa740761743d5f01b00 # main
