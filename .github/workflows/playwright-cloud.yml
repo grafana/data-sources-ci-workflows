@@ -53,11 +53,28 @@ on:
         type: number
         required: false
         default: 600
-      service-version:
-        description: Service version label reported to Grafana Bench (e.g. rrc-fast, nightly).
+      run-stage:
+        description: |
+          Rollout stage this run represents, recorded as the Bench `run_stage` label and `runStage` log field.
+          Vocabulary: `pr`, `main`, `nightly` (GitHub Actions runs) and `dev0`, `ops`, `prod0`-`prod4`, `catalog`
+          (in-Argo promotion runs). The DER analyzer matches this string exactly, so use a vocabulary value.
         type: string
         required: false
-        default: "rrc-fast"
+        default: "ci"
+      datasource-version:
+        description: |
+          The promoted plugin version (semver or the dockertag), recorded as the Bench `service_version` label.
+          Pass the real version on the release / promotion path; it drives the DER dashboard's version axis.
+        type: string
+        required: false
+        default: ""
+      service-version:
+        description: |
+          Deprecated back-compat alias for `datasource-version`. Prefer `datasource-version`.
+          If neither is set, the commit SHA is recorded, never the old `rrc-fast` channel label.
+        type: string
+        required: false
+        default: ""
 
 defaults:
   run:
@@ -144,7 +161,8 @@ jobs:
           BENCH_IMAGE: us-docker.pkg.dev/grafanalabs-global/docker-grafana-bench-prod/grafana-bench-playwright:v${{ inputs.bench-version }}
           BENCH_PREPARE_CMD: ${{ inputs.bench-prepare-cmd }}
           BENCH_EXECUTE_CMD: ${{ inputs.bench-execute-cmd }}
-          BENCH_SERVICE_VERSION: ${{ inputs.service-version }}
+          BENCH_RUN_STAGE: ${{ inputs.run-stage }}
+          BENCH_SERVICE_VERSION: ${{ inputs.datasource-version || inputs.service-version || github.sha }}
           BENCH_SUITE_NAME: ${{ github.repository }}/e2e
           REPO_SECRETS_INPUT: ${{ inputs.repo-secrets }}
         run: |
@@ -180,7 +198,7 @@ jobs:
             --pw-prepare "$BENCH_PREPARE_CMD" \
             --pw-execute "$BENCH_EXECUTE_CMD" \
             --report-output log \
-            --run-stage ci \
+            --run-stage "$BENCH_RUN_STAGE" \
             --service "${GITHUB_REPOSITORY#grafana/}" \
             --service-url "${GRAFANA_URL}" \
             --service-version "$BENCH_SERVICE_VERSION" \
