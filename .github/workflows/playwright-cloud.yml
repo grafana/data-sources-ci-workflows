@@ -203,6 +203,7 @@ jobs:
             --service-url "${GRAFANA_URL}" \
             --service-version "$BENCH_SERVICE_VERSION" \
             --suite-name "$BENCH_SUITE_NAME" \
+            --suite-base / \
             --suite-path /tests \
             --test-env CI=true \
             "${REPO_SECRET_TEST_ENV_FLAGS[@]}" \
