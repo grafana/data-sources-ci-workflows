@@ -17,6 +17,11 @@ on:
         description: golangci-lint version to use.
         type: string
         required: true
+      go-private-git-auth:
+        description: Whether to authenticate to GitHub for private Go module dependencies.
+        type: boolean
+        required: false
+        default: false
       environment:
         description: Plugin Catalog environment to publish to.
         type: string
@@ -78,6 +83,7 @@ jobs:
       environment: ${{ inputs.environment }}
       go-version: ${{ inputs.go-version }}
       golangci-lint-version: ${{ inputs.golangci-lint-version }}
+      go-private-git-auth: ${{ inputs.go-private-git-auth }}
       plugin-version-suffix: ${{ github.sha }}
       run-playwright: false
       scopes: ${{ inputs.scopes }}
