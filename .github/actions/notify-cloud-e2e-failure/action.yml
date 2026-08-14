@@ -71,62 +71,11 @@ runs:
         SHA: ${{ inputs.sha }}
         RUN_URL: ${{ inputs.run-url }}
       run: |
-        python3 <<'PY' >> "$GITHUB_OUTPUT"
-        import json
-        import os
-
-        channel = os.environ["SLACK_CHANNEL_ID"]
-        repo = os.environ["REPO"]
-        run_stage = os.environ.get("RUN_STAGE", "")
-        grafana_url = os.environ.get("GRAFANA_URL", "")
-        datasource_version = os.environ.get("DATASOURCE_VERSION", "")
-        ref_name = os.environ.get("REF_NAME", "")
-        actor = os.environ.get("ACTOR", "")
-        sha = os.environ.get("SHA", "")[:8]
-        run_url = os.environ["RUN_URL"]
-
-        def slack_escape(value):
-            return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-        fallback = f"Cloud E2E tests failed for {slack_escape(repo)} ({slack_escape(run_stage)})"
-
-        fields = [
-            {"type": "mrkdwn", "text": f"*Repository:*\n{slack_escape(repo)}"},
-            {"type": "mrkdwn", "text": f"*Run stage:*\n{slack_escape(run_stage)}"},
-            {"type": "mrkdwn", "text": f"*Branch:*\n{slack_escape(ref_name)}"},
-            {"type": "mrkdwn", "text": f"*Triggered by:*\n{slack_escape(actor)}"},
-        ]
-
-        if grafana_url:
-            fields.append({"type": "mrkdwn", "text": f"*Grafana Cloud URL:*\n{slack_escape(grafana_url)}"})
-        if datasource_version:
-            fields.append({"type": "mrkdwn", "text": f"*Datasource version:*\n{slack_escape(datasource_version)}"})
-
-        fields.append({"type": "mrkdwn", "text": f"*Commit:*\n`{slack_escape(sha)}`"})
-
-        payload = {
-            "channel": channel,
-            "text": fallback,
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f":x: *Cloud E2E tests failed*\n{fallback}"},
-                },
-                {
-                    "type": "section",
-                    "fields": fields,
-                },
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"<{run_url}|View the failed run>"},
-                },
-            ],
-        }
-
-        print("payload<<EOF")
-        print(json.dumps(payload))
-        print("EOF")
-        PY
+        {
+          echo "payload<<EOF"
+          python3 "$GITHUB_ACTION_PATH/build_payload.py"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Notify Slack
       uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
