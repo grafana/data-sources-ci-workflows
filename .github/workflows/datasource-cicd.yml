@@ -1,0 +1,135 @@
+# Description:
+# Reusable CI/CD pipeline for a Grafana datasource plugin. Plugin repos call this
+# from a thin `push.yml` caller and only pass their plugin id and tooling versions.
+#
+# On pull requests it runs CI. On pushes to main it runs release-please and, when a
+# release is cut, publishes that tag to the prod catalog. It exposes release_created
+# and tag_name as outputs so the caller publishes normal main builds to the dev
+# catalog itself: dev-publish is NOT routed through here, because
+# caller -> this workflow -> cd-dev.yml -> cd.yml -> ci.yml is five levels, one over
+# GitHub's 4-level reusable-workflow nesting cap.
+#
+# Docs minting note:
+# GATB (grafana-plugins-platform-bot) keys the docs mint on the TOP-LEVEL
+# `workflow_ref`, which is the plugin's own `push.yml` caller. Keeping the release
+# logic here (caller -> this reusable workflow -> cd.yml) preserves that mapping,
+# so docs are never minted from a `release-please.yml` path.
+
+name: Datasource - CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      plugin-id:
+        description: The plugin id (config.type), e.g. grafana-clickhouse-datasource.
+        type: string
+        required: true
+      notify-slack-on-failure:
+        description: Post a Slack message when the release/publish-to-prod path fails.
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      release_created:
+        description: Whether release-please cut a release on this run.
+        value: ${{ jobs.release-please.outputs.release_created }}
+      tag_name:
+        description: The tag release-please created, if any.
+        value: ${{ jobs.release-please.outputs.tag_name }}
+
+permissions: {}
+
+jobs:
+  ci:
+    name: CI
+    if: github.event_name == 'pull_request'
+    # GitHub forbids expressions in a reusable-workflow `uses:` ref, so this ref
+    # is static here (bumped centrally in this repo, e.g. by Renovate).
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v10.1.0
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      # Ensure PR builds produce unique plugin versions.
+      plugin-version-suffix: ${{ github.event.pull_request.head.sha }}
+
+  release-please:
+    name: Run release-please
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      # PRs created with the default GITHUB_TOKEN get their CI runs held in
+      # an approval-required state instead of running automatically, so the
+      # release PR is created with an app token.
+      - name: Generate GitHub token
+        id: generate-github-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: grafana-oss-big-tent
+
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.generate-github-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
+
+  # When release-please cuts a release, publish that tag to the prod catalog
+  # (Grafana Cloud scope). cd.yml tolerates the pre-existing tag and attaches the
+  # plugin zips to the release that release-please created. Docs and the GitHub
+  # release are disabled here: docs publish from the plugin's `publish.yml` on the
+  # release event, and release-please already created the GitHub release.
+  publish-prod:
+    name: Publish to prod catalog
+    if: github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true'
+    needs: release-please
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v10.1.0
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      pull-requests: read
+    with:
+      branch: ${{ needs.release-please.outputs.tag_name }}
+      environment: prod
+      scopes: grafana_cloud
+      disable-docs-publishing: true
+      disable-github-release: true
+      release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
+      run-playwright: false
+      github-draft-release: false
+
+  # Only notify on release-please / publish-to-prod failures. publish-dev failures
+  # are intentionally excluded to keep the channel quiet.
+  notify-slack:
+    name: Notify Slack on failure
+    if: always() && inputs.notify-slack-on-failure && (needs.release-please.result == 'failure' || needs.publish-prod.result == 'failure')
+    needs: [release-please, publish-prod]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Referenced by full path (not `./.github/actions/...`) because this is a
+      # reusable workflow: a local path would resolve against the caller's repo.
+      # TODO: pin to a tagged ref once this repo cuts one.
+      - name: Notify Slack on failure
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
+        with:
+          title: Release publish failed
+          repo: ${{ github.repository }}
+          stage: release
+          ref-name: ${{ github.ref_name }}
+          actor: ${{ github.actor }}
+          sha: ${{ github.sha }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          extra-field-1-label: Plugin ID
+          extra-field-1-value: ${{ inputs.plugin-id }}

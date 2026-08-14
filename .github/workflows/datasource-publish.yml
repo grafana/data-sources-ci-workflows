@@ -1,0 +1,123 @@
+# Description:
+# Reusable publish workflow for a Grafana datasource plugin. Plugin repos call
+# this from a thin `publish.yml` caller.
+#
+# Two paths, selected by the top-level caller's event:
+#  - `release` (published): publish docs for the released tag to the website.
+#  - `workflow_dispatch`: a manual publish, forwarding the caller's dispatch
+#    inputs (branch/environment/scopes/docs-only) to cd.yml.
+#
+# Docs minting note:
+# GATB (grafana-plugins-platform-bot) keys the docs mint on the TOP-LEVEL
+# `workflow_ref`, which is the plugin's own `publish.yml` caller. Keeping the docs
+# publish here (caller -> this reusable workflow -> cd.yml) preserves that mapping,
+# so the mint stays keyed on the plugin's `publish.yml`.
+
+name: Datasource - Publish plugin
+
+on:
+  workflow_call:
+    inputs:
+      plugin-id:
+        description: The plugin id (config.type), e.g. grafana-clickhouse-datasource.
+        type: string
+        required: true
+      # Manual-dispatch pass-throughs. The plugin's `publish.yml` collects these
+      # from its own `workflow_dispatch` inputs and forwards them. They are ignored
+      # on the `release` event (the `docs` job reads github.event.release instead).
+      branch:
+        description: Branch or tag to publish from (manual dispatch).
+        type: string
+        required: false
+        default: main
+      environment:
+        description: Catalog environment to publish to (manual dispatch).
+        type: string
+        required: false
+        default: prod
+      scopes:
+        description: Publishing scopes for the catalog (manual dispatch).
+        type: string
+        required: false
+        default: grafana_cloud
+      docs-only:
+        description: Only publish docs, do not publish the plugin (manual dispatch).
+        type: boolean
+        required: false
+        default: false
+      notify-slack-on-failure:
+        description: Post a Slack message when the publish fails.
+        type: boolean
+        required: false
+        default: true
+
+permissions: {}
+
+jobs:
+  # Auto-publish docs when a release is published. release-please creates the
+  # release with the grafana-oss-big-tent token, so this event fires; the run is
+  # docs-only and mints the platform bot via the grant keyed to the plugin's
+  # `publish.yml` caller.
+  docs:
+    name: Publish docs
+    if: github.event_name == 'release'
+    # GitHub forbids expressions in a reusable-workflow `uses:` ref, so this ref
+    # is static here (bumped centrally in this repo, e.g. by Renovate).
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v10.1.0
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      pull-requests: read
+    with:
+      branch: ${{ github.event.release.tag_name }}
+      environment: prod
+      docs-only: true
+      scopes: grafana_cloud
+      # Anchored so a ref merely containing a match is not treated as a release.
+      release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
+      run-playwright: false
+      github-draft-release: false
+
+  # Manual publish: forward the caller's dispatch inputs to cd.yml.
+  manual:
+    name: Manual publish
+    if: github.event_name == 'workflow_dispatch'
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v10.1.0
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      pull-requests: read
+    with:
+      branch: ${{ inputs.branch }}
+      environment: ${{ inputs.environment }}
+      scopes: ${{ inputs.scopes }}
+      docs-only: ${{ inputs.docs-only }}
+      run-playwright: false
+      github-draft-release: false
+
+  notify-slack:
+    name: Notify Slack on failure
+    if: always() && inputs.notify-slack-on-failure && (needs.docs.result == 'failure' || needs.manual.result == 'failure')
+    needs: [docs, manual]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Referenced by full path (not `./.github/actions/...`) because this is a
+      # reusable workflow: a local path would resolve against the caller's repo.
+      # TODO: pin to a tagged ref once this repo cuts one.
+      - name: Notify Slack on failure
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
+        with:
+          title: Publish failed
+          repo: ${{ github.repository }}
+          stage: publish
+          ref-name: ${{ github.ref_name }}
+          actor: ${{ github.actor }}
+          sha: ${{ github.sha }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          extra-field-1-label: Plugin ID
+          extra-field-1-value: ${{ inputs.plugin-id }}
