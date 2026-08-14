@@ -1,0 +1,149 @@
+# Description:
+# Posts a failure notification to Slack using Block Kit. It is intentionally
+# generic so different callers (E2E, release, publish, ...) can populate the
+# title and the Block Kit fields with their own context.
+#
+# Usage note:
+# - This action calls grafana/shared-workflows/actions/send-slack-message, which
+#   authenticates via OIDC. The calling job MUST grant `id-token: write`
+#   permissions (and `contents: read`), otherwise the Slack step will fail.
+# - Reference this action by its FULL path
+#   (grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@<ref>),
+#   never by a local `./.github/actions/...` path — a local path resolves against
+#   the calling repository, not this one.
+# - See README.md for a worked example of wiring this into a caller's cron.yml.
+
+name: Notify Slack on failure
+description: Post a Block Kit failure notification to a Slack channel.
+
+inputs:
+  slack-channel-id:
+    description: Slack channel ID to post the message to.
+    required: false
+    # #grafana-ds-plugins-dev
+    default: C0APH909GFK
+  title:
+    description: Short failure title, e.g. "Cloud E2E tests failed" or "Release publish failed".
+    required: true
+  repo:
+    description: Repository the failure originated from (e.g. github.repository).
+    required: true
+  stage:
+    description: Pipeline stage or context the failure happened in.
+    required: false
+    default: ""
+  ref-name:
+    description: Git ref name the run was triggered on (e.g. github.ref_name).
+    required: false
+    default: ""
+  actor:
+    description: User that triggered the run (e.g. github.actor).
+    required: false
+    default: ""
+  sha:
+    description: Commit SHA associated with the run (e.g. github.sha).
+    required: false
+    default: ""
+  run-url:
+    description: URL of the failed workflow run.
+    required: true
+  extra-field-1-label:
+    description: Optional label for an extra Block Kit field (e.g. "Grafana Cloud URL").
+    required: false
+    default: ""
+  extra-field-1-value:
+    description: Optional value for the first extra Block Kit field.
+    required: false
+    default: ""
+  extra-field-2-label:
+    description: Optional label for a second extra Block Kit field (e.g. "Version").
+    required: false
+    default: ""
+  extra-field-2-value:
+    description: Optional value for the second extra Block Kit field.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Build Slack notification payload
+      id: slack-payload
+      shell: bash
+      env:
+        SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        TITLE: ${{ inputs.title }}
+        REPO: ${{ inputs.repo }}
+        STAGE: ${{ inputs.stage }}
+        REF_NAME: ${{ inputs.ref-name }}
+        ACTOR: ${{ inputs.actor }}
+        SHA: ${{ inputs.sha }}
+        RUN_URL: ${{ inputs.run-url }}
+        FIELD1_LABEL: ${{ inputs.extra-field-1-label }}
+        FIELD1_VALUE: ${{ inputs.extra-field-1-value }}
+        FIELD2_LABEL: ${{ inputs.extra-field-2-label }}
+        FIELD2_VALUE: ${{ inputs.extra-field-2-value }}
+      run: |
+        python3 <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import os
+
+        channel = os.environ["SLACK_CHANNEL_ID"]
+        title = os.environ["TITLE"]
+        repo = os.environ["REPO"]
+        stage = os.environ.get("STAGE", "")
+        ref_name = os.environ.get("REF_NAME", "")
+        actor = os.environ.get("ACTOR", "")
+        sha = os.environ.get("SHA", "")[:8]
+        run_url = os.environ["RUN_URL"]
+
+        def slack_escape(value):
+            return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        fallback = f"{title} for {slack_escape(repo)} ({slack_escape(stage)})"
+
+        fields = [
+            {"type": "mrkdwn", "text": f"*Repository:*\n{slack_escape(repo)}"},
+            {"type": "mrkdwn", "text": f"*Stage:*\n{slack_escape(stage)}"},
+            {"type": "mrkdwn", "text": f"*Branch:*\n{slack_escape(ref_name)}"},
+            {"type": "mrkdwn", "text": f"*Triggered by:*\n{slack_escape(actor)}"},
+        ]
+
+        for label_env, value_env in (("FIELD1_LABEL", "FIELD1_VALUE"), ("FIELD2_LABEL", "FIELD2_VALUE")):
+            label = os.environ.get(label_env, "")
+            value = os.environ.get(value_env, "")
+            if label and value:
+                fields.append({"type": "mrkdwn", "text": f"*{slack_escape(label)}:*\n{slack_escape(value)}"})
+
+        fields.append({"type": "mrkdwn", "text": f"*Commit:*\n`{slack_escape(sha)}`"})
+
+        payload = {
+            "channel": channel,
+            "text": fallback,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f":x: *{slack_escape(title)}*\n{fallback}"},
+                },
+                {
+                    "type": "section",
+                    "fields": fields,
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"<{run_url}|View the failed run>"},
+                },
+            ],
+        }
+
+        print("payload<<EOF")
+        print(json.dumps(payload))
+        print("EOF")
+        PY
+
+    - name: Notify Slack
+      uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+      with:
+        method: chat.postMessage
+        payload: ${{ steps.slack-payload.outputs.payload }}
+        payload-templated: false
