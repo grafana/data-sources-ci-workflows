@@ -1,6 +1,6 @@
 # Description:
 # Reusable CI/CD pipeline for a Grafana datasource plugin. Plugin repos call this
-# from a thin `push.yml` caller and only pass their plugin id and tooling versions.
+# from a thin `push.yml` caller.
 #
 # On pull requests it runs CI. On pushes to main it runs release-please and, when a
 # release is cut, publishes that tag to the prod catalog. It exposes release_created
@@ -19,16 +19,6 @@ name: Datasource - CI/CD
 
 on:
   workflow_call:
-    inputs:
-      plugin-id:
-        description: The plugin id (config.type), e.g. grafana-clickhouse-datasource.
-        type: string
-        required: true
-      notify-slack-on-failure:
-        description: Post a Slack message when the release/publish-to-prod path fails.
-        type: boolean
-        required: false
-        default: true
     outputs:
       release_created:
         description: Whether release-please cut a release on this run.
@@ -106,30 +96,3 @@ jobs:
       release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
       run-playwright: false
       github-draft-release: false
-
-  # Only notify on release-please / publish-to-prod failures. publish-dev failures
-  # are intentionally excluded to keep the channel quiet.
-  notify-slack:
-    name: Notify Slack on failure
-    if: always() && inputs.notify-slack-on-failure && (needs.release-please.result == 'failure' || needs.publish-prod.result == 'failure')
-    needs: [release-please, publish-prod]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      # Referenced by full path (not `./.github/actions/...`) because this is a
-      # reusable workflow: a local path would resolve against the caller's repo.
-      # TODO: pin to a tagged ref once this repo cuts one.
-      - name: Notify Slack on failure
-        uses: grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
-        with:
-          title: Release publish failed
-          repo: ${{ github.repository }}
-          stage: release
-          ref-name: ${{ github.ref_name }}
-          actor: ${{ github.actor }}
-          sha: ${{ github.sha }}
-          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          extra-field-1-label: Plugin ID
-          extra-field-1-value: ${{ inputs.plugin-id }}

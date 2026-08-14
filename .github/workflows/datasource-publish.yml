@@ -18,10 +18,6 @@ name: Datasource - Publish plugin
 on:
   workflow_call:
     inputs:
-      plugin-id:
-        description: The plugin id (config.type), e.g. grafana-clickhouse-datasource.
-        type: string
-        required: true
       # Manual-dispatch pass-throughs. The plugin's `publish.yml` collects these
       # from its own `workflow_dispatch` inputs and forwards them. They are ignored
       # on the `release` event (the `docs` job reads github.event.release instead).
@@ -45,11 +41,6 @@ on:
         type: boolean
         required: false
         default: false
-      notify-slack-on-failure:
-        description: Post a Slack message when the publish fails.
-        type: boolean
-        required: false
-        default: true
 
 permissions: {}
 
@@ -96,28 +87,3 @@ jobs:
       docs-only: ${{ inputs.docs-only }}
       run-playwright: false
       github-draft-release: false
-
-  notify-slack:
-    name: Notify Slack on failure
-    if: always() && inputs.notify-slack-on-failure && (needs.docs.result == 'failure' || needs.manual.result == 'failure')
-    needs: [docs, manual]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      # Referenced by full path (not `./.github/actions/...`) because this is a
-      # reusable workflow: a local path would resolve against the caller's repo.
-      # TODO: pin to a tagged ref once this repo cuts one.
-      - name: Notify Slack on failure
-        uses: grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
-        with:
-          title: Publish failed
-          repo: ${{ github.repository }}
-          stage: publish
-          ref-name: ${{ github.ref_name }}
-          actor: ${{ github.actor }}
-          sha: ${{ github.sha }}
-          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          extra-field-1-label: Plugin ID
-          extra-field-1-value: ${{ inputs.plugin-id }}
