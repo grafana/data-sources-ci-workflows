@@ -69,3 +69,17 @@ jobs:
 | `ref-name`           | No       | Git ref name the run was triggered on (e.g. `github.ref_name`).                                         |
 | `actor`              | No       | User that triggered the run (e.g. `github.actor`).                                                       |
 | `sha`                | No       | Commit SHA associated with the run (e.g. `github.sha`).                                                 |
+
+## Payload and tests
+
+The Slack Block Kit payload is built by `build_payload.py`, which reads the inputs from
+the environment and prints the `chat.postMessage` payload as JSON for the Slack step to
+send. Keeping it in a standalone module rather than inline in `action.yml` means the field
+selection (including the optional `grafana-url` / `datasource-version` rows) and the mrkdwn
+escaping are lintable and unit-tested.
+
+Run the tests from the action directory:
+
+```sh
+python3 -m unittest test_build_payload
+```
