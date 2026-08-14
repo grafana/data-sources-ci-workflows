@@ -75,6 +75,13 @@ on:
         type: string
         required: false
         default: ""
+      notify-slack-on-failure:
+        description: |
+          Post a Slack message to #grafana-ds-plugins-dev when the Bench test job fails.
+          Skipped for `run-stage: pr`, since those failures already surface on the PR itself.
+        type: boolean
+        required: false
+        default: true
 
 defaults:
   run:
@@ -212,3 +219,90 @@ jobs:
             --test-env GRAFANA_URL \
             --test-runner playwright \
             --test-verbose
+
+  notify-slack:
+    name: Notify Slack on failure
+    needs: bench-tests
+    runs-on: ubuntu-24.04
+    if: |
+      always() &&
+      needs.bench-tests.result == 'failure' &&
+      inputs.notify-slack-on-failure &&
+      inputs.run-stage != 'pr'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Build Slack notification payload
+        id: slack-payload
+        env:
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_STAGE: ${{ inputs.run-stage }}
+          GRAFANA_URL: ${{ inputs.grafana-url }}
+          DATASOURCE_VERSION: ${{ inputs.datasource-version || inputs.service-version || github.sha }}
+          # #grafana-ds-plugins-dev
+          SLACK_CHANNEL_ID: C0APH909GFK
+        run: |
+          python3 <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          channel = os.environ["SLACK_CHANNEL_ID"]
+          repo = os.environ["REPO"]
+          ref_name = os.environ["REF_NAME"]
+          actor = os.environ["ACTOR"]
+          sha = os.environ["SHA"][:8]
+          run_url = os.environ["RUN_URL"]
+          run_stage = os.environ["RUN_STAGE"]
+          grafana_url = os.environ["GRAFANA_URL"]
+          datasource_version = os.environ["DATASOURCE_VERSION"]
+
+          def slack_escape(value):
+              return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+          fallback = f"Cloud E2E tests failed for {slack_escape(repo)} ({slack_escape(run_stage)})"
+
+          payload = {
+              "channel": channel,
+              "text": fallback,
+              "blocks": [
+                  {
+                      "type": "section",
+                      "text": {"type": "mrkdwn", "text": f":x: *Cloud E2E tests failed*\n{fallback}"},
+                  },
+                  {
+                      "type": "section",
+                      "fields": [
+                          {"type": "mrkdwn", "text": f"*Repository:*\n{slack_escape(repo)}"},
+                          {"type": "mrkdwn", "text": f"*Run stage:*\n{slack_escape(run_stage)}"},
+                          {"type": "mrkdwn", "text": f"*Branch:*\n{slack_escape(ref_name)}"},
+                          {"type": "mrkdwn", "text": f"*Triggered by:*\n{slack_escape(actor)}"},
+                          {"type": "mrkdwn", "text": f"*Grafana Cloud URL:*\n{slack_escape(grafana_url)}"},
+                          {"type": "mrkdwn", "text": f"*Datasource version:*\n{slack_escape(datasource_version)}"},
+                          {"type": "mrkdwn", "text": f"*Commit:*\n`{slack_escape(sha)}`"},
+                      ],
+                  },
+                  {
+                      "type": "section",
+                      "text": {"type": "mrkdwn", "text": f"<{run_url}|View the failed run>"},
+                  },
+              ],
+          }
+
+          print("payload<<EOF")
+          print(json.dumps(payload))
+          print("EOF")
+          PY
+
+      - name: Notify Slack
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+        with:
+          method: chat.postMessage
+          payload: ${{ steps.slack-payload.outputs.payload }}
+          payload-templated: false
