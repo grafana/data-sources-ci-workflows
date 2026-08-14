@@ -7,7 +7,7 @@
 # This workflow does not notify on failure itself. Callers that want a Slack alert
 # (e.g. a nightly cron.yml) should add their own job that runs `if: failure()` on the
 # job calling this workflow and invokes:
-#   grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
+#   grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@main
 
 name: Plugins - Playwright E2E tests against Grafana Cloud
 

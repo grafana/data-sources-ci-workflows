@@ -1,4 +1,4 @@
-# notify-slack-failure
+# notify-cloud-e2e-failure
 
 Composite action that posts a Cloud E2E test failure notification to Slack.
 Used by callers of `playwright-cloud.yml` (e.g. a plugin's `cron.yml`) to
@@ -46,7 +46,7 @@ jobs:
       id-token: write
     steps:
       - name: Notify Slack on failure
-        uses: grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@main
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@main
         with:
           repo: ${{ github.repository }}
           run-stage: nightly

@@ -9,7 +9,7 @@
 #   authenticates via OIDC. The calling job MUST grant `id-token: write`
 #   permissions (and `contents: read`), otherwise the Slack step will fail.
 # - Reference this action by its FULL path
-#   (grafana/data-sources-ci-workflows/.github/actions/notify-slack-failure@<ref>),
+#   (grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@<ref>),
 #   never by a local `./.github/actions/...` path — a local path resolves against
 #   the calling repository, not this one.
 # - See README.md for a worked example of wiring this into a caller's cron.yml.
