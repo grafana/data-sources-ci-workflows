@@ -112,13 +112,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Get secrets from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
+        uses: grafana/shared-workflows/actions/get-vault-secrets@2e3743a1f8abfd3e921e53a7726ec0744c11bb01 # get-vault-secrets/v2.0.1
         with:
           common_secrets: |
             PLAYWRIGHT_GRAFANA_PASSWORD=data-sources/e2e:grafana-pw
@@ -127,7 +127,6 @@ jobs:
             PROMETHEUS_URL=grafana-bench:prometheus_url
             PROMETHEUS_USER=grafana-bench:prometheus_user
           repo_secrets: ${{ inputs.repo-secrets }}
-          export_env: false
 
       - name: Export repo secrets to runner environment
         id: export-repo-secrets
@@ -148,7 +147,7 @@ jobs:
 
       - name: Wait for Grafana to be reachable
         id: wait-for-grafana
-        uses: grafana/plugin-actions/wait-for-grafana@c8ad89b7d81f8cb9967bb65e444d85f5b3d7c674 # wait-for-grafana/v1.0.2
+        uses: grafana/plugin-actions/wait-for-grafana@4205a0824a13b71fdb9b9b49f28f5f72b754f81f # wait-for-grafana/v1.0.5
         with:
           url: "${{ env.GRAFANA_URL }}/login"
           timeout: ${{ inputs.grafana-readiness-timeout }}
