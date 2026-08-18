@@ -216,3 +216,18 @@ jobs:
             --test-env GRAFANA_URL \
             --test-runner playwright \
             --test-verbose
+
+      # always(): a passing run's report carries the flake signal, because bench's
+      # testsFlaky reads 0 for Playwright suites. Retention is short because a
+      # retry collects a trace, which can capture credentials typed into a config
+      # editor.
+      - name: Upload Playwright artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: playwright-${{ inputs.run-stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
