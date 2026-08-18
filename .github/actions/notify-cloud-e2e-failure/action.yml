@@ -1,0 +1,85 @@
+# Description:
+# Posts a Cloud E2E test failure notification to Slack using Block Kit.
+# Intended for callers of playwright-cloud.yml (e.g. a plugin's cron.yml) to
+# notify on failure, since the reusable workflow itself doesn't own
+# notification policy.
+#
+# Usage note:
+# - This action calls grafana/shared-workflows/actions/send-slack-message, which
+#   authenticates via OIDC. The calling job MUST grant `id-token: write`
+#   permissions (and `contents: read`), otherwise the Slack step will fail.
+# - Reference this action by its FULL path
+#   (grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@<ref>),
+#   never by a local `./.github/actions/...` path — a local path resolves against
+#   the calling repository, not this one.
+# - See README.md for a worked example of wiring this into a caller's cron.yml.
+
+name: Notify Slack on Cloud E2E failure
+description: Post a Cloud E2E test failure notification to Slack.
+
+inputs:
+  slack-channel-id:
+    description: Slack channel ID to post the message to.
+    required: false
+    # #grafana-ds-plugins-dev
+    default: C0APH909GFK
+  repo:
+    description: Repository the failure originated from (e.g. github.repository).
+    required: true
+  run-stage:
+    description: Rollout stage the run represents (e.g. pr, main, nightly, dev0, ops, prod0-4, catalog).
+    required: false
+    default: ""
+  grafana-url:
+    description: Grafana Cloud instance URL the tests ran against.
+    required: false
+    default: ""
+  datasource-version:
+    description: Datasource plugin version under test.
+    required: false
+    default: ""
+  ref-name:
+    description: Git ref name the run was triggered on (e.g. github.ref_name).
+    required: false
+    default: ""
+  actor:
+    description: User that triggered the run (e.g. github.actor).
+    required: false
+    default: ""
+  sha:
+    description: Commit SHA associated with the run (e.g. github.sha).
+    required: false
+    default: ""
+  run-url:
+    description: URL of the failed workflow run.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build Slack notification payload
+      id: slack-payload
+      shell: bash
+      env:
+        SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        REPO: ${{ inputs.repo }}
+        RUN_STAGE: ${{ inputs.run-stage }}
+        GRAFANA_URL: ${{ inputs.grafana-url }}
+        DATASOURCE_VERSION: ${{ inputs.datasource-version }}
+        REF_NAME: ${{ inputs.ref-name }}
+        ACTOR: ${{ inputs.actor }}
+        SHA: ${{ inputs.sha }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: |
+        {
+          echo "payload<<EOF"
+          python3 "$GITHUB_ACTION_PATH/build_payload.py"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Notify Slack
+      uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+      with:
+        method: chat.postMessage
+        payload: ${{ steps.slack-payload.outputs.payload }}
+        payload-templated: false

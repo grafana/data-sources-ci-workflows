@@ -3,6 +3,11 @@
 # Unlike the standard playwright workflow, no local Grafana container is started — tests run
 # against the live Cloud instance at the provided grafana-url.
 # Datasource-specific secrets are fetched from Vault and forwarded into the Bench container.
+#
+# This workflow does not notify on failure itself. Callers that want a Slack alert
+# (e.g. a nightly cron.yml) should add their own job that runs `if: failure()` on the
+# job calling this workflow and invokes:
+#   grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@main
 
 name: Plugins - Playwright E2E tests against Grafana Cloud
 
