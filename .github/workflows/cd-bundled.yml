@@ -85,6 +85,20 @@ on:
         type: boolean
         required: false
         default: false
+      notify-on-failure:
+        description: >-
+          Post to Slack when the pipeline fails. On by default: the Cloud E2E notifier is
+          caller-owned and one repo simply never wired it up, which is how a nightly failed ten
+          times in a row silently. Opting out has to be deliberate.
+        type: boolean
+        required: false
+        default: true
+      slack-channel-id:
+        description: >-
+          Slack channel to notify. Left empty, the notify action's own default is used.
+        type: string
+        required: false
+        default: ""
     outputs:
       image:
         description: Full image reference that was built, including the tag.
@@ -310,3 +324,34 @@ jobs:
           workflow_template: ${{ fromJSON(needs.build.outputs.plugin).id }}
           parameters: |
             dockertag=${{ needs.bundle.outputs.image }}
+
+  # A bundled image that fails to build stops the datasource getting a new version, and nothing
+  # else reports that. `failure()` covers a failed job anywhere above, and a skipped job does not
+  # suppress it, so this still fires when the rollout was never asked for.
+  notify-failure:
+    name: Notify on failure
+    needs: [build, resolve-grafana-image, bundle, trigger-argo]
+    if: failure() && inputs.notify-on-failure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Post to Slack
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-bundled-image-failure@main # zizmor: ignore[unpinned-uses]
+        with:
+          # Empty keeps the action's own default channel.
+          slack-channel-id: ${{ inputs.slack-channel-id }}
+          repo: ${{ github.repository }}
+          # Raw JSON, not fromJSON: the build job may have failed before producing this, and
+          # fromJSON on an empty string fails the whole expression.
+          plugin-json: ${{ needs.build.outputs.plugin }}
+          # toJSON(needs) carries each job's result, so the message can name the stage that broke
+          # without this list being kept in step with the jobs above.
+          job-results: ${{ toJSON(needs) }}
+          image: ${{ needs.bundle.outputs.image }}
+          grafana-image: ${{ needs.resolve-grafana-image.outputs.grafana-image }}
+          ref-name: ${{ github.ref_name }}
+          actor: ${{ github.actor }}
+          sha: ${{ inputs.ref || github.sha }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
