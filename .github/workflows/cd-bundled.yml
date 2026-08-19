@@ -1,0 +1,218 @@
+name: Datasource - Build bundled image
+
+on:
+  workflow_call:
+    inputs:
+      plugin-id:
+        description: Plugin id, e.g. grafana-clickhouse-datasource
+        required: true
+        type: string
+      plugin-directory:
+        description: Directory containing the plugin source (dist is produced here)
+        default: src
+        type: string
+      grafana-image:
+        description: Full grafana-pro image ref to bake. Empty = resolve from deployment_tools dev0 wave.
+        default: ""
+        type: string
+      go-version:
+        default: "1.26.5"
+        type: string
+      node-version:
+        default: "20.12.2"
+        type: string
+      golangci-lint-version:
+        default: "2.10.1"
+        type: string
+      registry:
+        description: Target GAR (no plugin-id suffix). Empty = derive docker-<repo>-prod in grafanalabs-global.
+        default: ""
+        type: string
+      debug:
+        default: false
+        type: boolean
+      trigger-argo:
+        default: true
+        type: boolean
+      argo-instance:
+        default: ops
+        type: string
+      argo-namespace:
+        default: grafana-datasources-cd
+        type: string
+      argo-workflow-template:
+        description: Argo template to submit. Empty = <plugin-id>.
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build + sign plugin (ci.yml)
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.0
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      plugin-directory: ${{ inputs.plugin-directory }}
+      go-version: ${{ inputs.go-version }}
+      node-version: ${{ inputs.node-version }}
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
+      environment: prod
+      run-playwright: false
+      run-trufflehog: false
+      disable-gcs-upload: true
+      dist-artifacts-prefix: bundled-
+      dist-artifacts-retention-days: 1
+
+  resolve-grafana-image:
+    name: Resolve Grafana base image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      grafana_image: ${{ steps.resolve.outputs.grafana_image }}
+      grafana_version: ${{ steps.resolve.outputs.grafana_version }}
+    steps:
+      # TODO(kuba): confirm token source. This repo's only existing
+      # create-github-app-token usage (datasource-cicd.yml, reusable-add-to-project.yml)
+      # is the Vault-backed `grafana-oss-big-tent` app, used for release-please PRs and
+      # add-to-project on THIS repo. There is no confirmed grant for that app (or any
+      # other app registered in this repo's Vault policy) to read the private
+      # grafana/deployment_tools repo. Confirm with platform which Vault-registered
+      # GitHub App has deployment_tools `contents:read` before merging, and set
+      # `github_app:` below accordingly (the action ref/mechanism itself is correct).
+      # This action also scopes tokens per `permission_set` (default "default"): confirm
+      # which permission_set, if any, grants that app's token deployment_tools read access,
+      # and set it explicitly below if the default set does not cover it.
+      - name: Get GitHub App token for deployment_tools read
+        id: token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: TODO-confirm-app-with-deployment_tools-read-access
+          permission_set: TODO-confirm-permission-set-with-deployment_tools-read-access
+      - name: Resolve
+        id: resolve
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          OVERRIDE: ${{ inputs.grafana-image }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OVERRIDE}" ]; then
+            GRAFANA_IMAGE="${OVERRIDE}"
+          else
+            RAW=$(curl -sf \
+              -H "Accept: application/vnd.github.v3.raw" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/grafana/deployment_tools/contents/ksonnet/environments/grafana-datasources/waves/api_server.jsonnet")
+            GRAFANA_IMAGE=$(echo "$RAW" | grep "dev0:" | sed "s/.*'\(.*\)'.*/\1/")
+          fi
+          GRAFANA_VERSION=$(echo "$GRAFANA_IMAGE" | sed -n 's/.*:\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          test -n "$GRAFANA_IMAGE" && test -n "$GRAFANA_VERSION"
+          echo "grafana_image=$GRAFANA_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "grafana_version=$GRAFANA_VERSION" >> "$GITHUB_OUTPUT"
+
+  bundle-and-push:
+    name: Bundle + push image
+    needs: [build, resolve-grafana-image]
+    runs-on: ubuntu-amd64-large
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - name: Checkout data-sources-ci-workflows (for Dockerfile + smoke test)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Download signed dist artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: bundled-dist-artifacts
+          path: dist-artifacts
+      - name: Unzip universal into dist/
+        env:
+          UNIVERSAL_ZIP_NAME: ${{ needs.build.outputs.universal-zip }}
+        run: |
+          set -euo pipefail
+          UNIVERSAL="dist-artifacts/${UNIVERSAL_ZIP_NAME}"
+          test -f "$UNIVERSAL"
+          mkdir -p unzipped && unzip -q "$UNIVERSAL" -d unzipped
+          # The zip's top-level folder is the plugin id.
+          # The Dockerfile COPY expects dist/ to be that folder's contents.
+          SRC=$(find unzipped -maxdepth 1 -mindepth 1 -type d | head -1)
+          if [ -d "$SRC/dist" ]; then
+            mv "$SRC/dist" dist
+          else
+            mv "$SRC" dist
+          fi
+          test -f dist/MANIFEST.txt
+      - name: Calculate image tag
+        id: tag
+        env:
+          PLUGIN_ID: ${{ inputs.plugin-id }}
+          GRAFANA_VERSION: ${{ needs.resolve-grafana-image.outputs.grafana_version }}
+          DEBUG: ${{ inputs.debug }}
+          REGISTRY_IN: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          PLUGIN_VERSION=$(jq -r .info.version dist/plugin.json)
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          REGISTRY="${REGISTRY_IN}"
+          if [ -z "$REGISTRY" ]; then
+            REGISTRY="us-docker.pkg.dev/grafanalabs-global/docker-${GITHUB_REPOSITORY##*/}-prod"
+          fi
+          IMAGE_PATH="${PLUGIN_ID}"; DEBUG_SUFFIX=""
+          if [ "${DEBUG}" = "true" ]; then IMAGE_PATH="debug/${PLUGIN_ID}"; DEBUG_SUFFIX="-debug"; fi
+          IMAGE_TAG="${PLUGIN_VERSION}-${GRAFANA_VERSION}-${SHORT_SHA}${DEBUG_SUFFIX}-amd64"
+          {
+            echo "image=${REGISTRY}/${IMAGE_PATH}:${IMAGE_TAG}"
+            echo "image_tag=${IMAGE_TAG}"
+            echo "plugin_version=${PLUGIN_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - name: Login to GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@00646b30431b955ec3c00982b23b1eeb7b66445b # v1.0.0
+        with:
+          registry: us-docker.pkg.dev
+      - name: Build (load, no push)
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        with:
+          context: .
+          file: docker/Dockerfile.bundled-plugin
+          load: true
+          push: false
+          tags: ${{ steps.tag.outputs.image }}
+          build-args: |
+            GRAFANA_IMAGE=${{ needs.resolve-grafana-image.outputs.grafana_image }}
+            PLUGIN_ID=${{ inputs.plugin-id }}
+            PLUGIN_VERSION=${{ steps.tag.outputs.plugin_version }}
+      - name: Boot smoke test
+        run: bash ./docker/smoke-test-bundled-plugin.sh "${{ steps.tag.outputs.image }}" "${{ inputs.plugin-id }}"
+      - name: Push
+        run: docker push "${{ steps.tag.outputs.image }}"
+
+  trigger-argo:
+    name: Trigger Argo rollout
+    needs: bundle-and-push
+    if: ${{ !inputs.debug && inputs.trigger-argo }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Trigger
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@e100806688f1209051080dfea5719fbbd1d18cc0 # trigger-argo-workflow/v1.2.1
+        with:
+          instance: ${{ inputs.argo-instance }}
+          namespace: ${{ inputs.argo-namespace }}
+          workflow_template: ${{ inputs.argo-workflow-template != '' && inputs.argo-workflow-template || format('{0}', inputs.plugin-id) }}
+          parameters: |
+            dockertag=${{ needs.bundle-and-push.outputs.image_tag }}

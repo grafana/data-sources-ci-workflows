@@ -1,0 +1,26 @@
+self-hosted-runner:
+  labels:
+    - ubuntu-x64-small
+    - ubuntu-x64
+    - ubuntu-x64-large
+    - ubuntu-x64-xlarge
+    - ubuntu-x64-2xlarge
+    - ubuntu-amd64-small
+    - ubuntu-amd64
+    - ubuntu-amd64-large
+    - ubuntu-amd64-xlarge
+    - ubuntu-amd64-2xlarge
+    - ubuntu-arm64-small
+    - ubuntu-arm64
+    - ubuntu-arm64-large
+    - ubuntu-arm64-xlarge
+    - ubuntu-arm64-2xlarge
+    - ubuntu-any
+    - ubuntu-any-minus
+    - ubuntu-x64-minus
+    - ubuntu-amd64-minus
+    - windows-x64-small
+    - windows-x64
+    - windows-x64-large
+    - windows-x64-xlarge
+    - windows-x64-2xlarge
