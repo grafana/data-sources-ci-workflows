@@ -252,12 +252,12 @@ jobs:
           echo "image=$image"
 
       # Before the build, not after: the base image is in a private GAR and cannot be pulled
-      # without credentials.
+      # without credentials. The write identity comes from this job's `environment: prod`, not from
+      # an input here.
       - name: Log in to the GAR
         uses: grafana/shared-workflows/actions/login-to-gar@1f541877ceb22c7be7667d8a8df04984aeac9f9d # login-to-gar/v1.0.3
         with:
           registry: us-docker.pkg.dev
-          environment: prod
 
       - name: Bundle, smoke and push
         id: bundle
