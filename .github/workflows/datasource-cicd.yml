@@ -72,11 +72,23 @@ jobs:
           manifest-file: .release-please-manifest.json
           target-branch: main
 
-  # When release-please cuts a release, publish that tag to the prod catalog
-  # (Grafana Cloud scope). cd.yml tolerates the pre-existing tag and attaches the
-  # plugin zips to the release that release-please created. Docs and the GitHub
-  # release are disabled here: docs publish from the plugin's `publish.yml` on the
+  # When release-please cuts a release, publish that tag to the prod catalog. cd.yml tolerates the
+  # pre-existing tag and attaches the plugin zips to the release that release-please created. Docs
+  # and the GitHub release are disabled here: docs publish from the plugin's `publish.yml` on the
   # release event, and release-please already created the GitHub release.
+  #
+  # Scope: cd.yml's default, `universal`. There is deliberately no scope override.
+  # `scopes` has no on-prem-only value — it is `universal`, `grafana_cloud`, or a named set of orgs
+  # or instances — and there is no case for publishing a version to on-prem while withholding it
+  # from Cloud. So the catalog carries one universally scoped version per release, published from
+  # here and nowhere else, and the release pipeline stays identical for every data source whether or
+  # not it has moved to bundled images.
+  #
+  # This does not make Cloud depend on the catalog. Once a data source ships bundled images, Cloud
+  # gets the plugin from the image and reads nothing from the catalog; the catalog entry is then
+  # metadata plus the on-prem download. Keeping the version universally scoped means the two
+  # delivery paths never publish the same version twice, which a per-wave catalog publish alongside
+  # this one would.
   publish-prod:
     name: Publish to prod catalog
     if: github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true'
@@ -90,7 +102,6 @@ jobs:
     with:
       branch: ${{ needs.release-please.outputs.tag_name }}
       environment: prod
-      scopes: grafana_cloud
       disable-docs-publishing: true
       disable-github-release: true
       release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
