@@ -1,0 +1,290 @@
+# Description:
+# Reusable pipeline that builds a datasource plugin into a bundled Grafana image, boot-smokes it,
+# pushes it to the plugin's own prod GAR, and optionally triggers the Argo rollout. Plugin repos
+# call this from a thin `bundled-image.yml` caller.
+#
+# The build is not reimplemented here. It calls plugin-ci-workflows/ci.yml, which already builds
+# the frontend and backend, signs the plugin against GCOM, and packages per-arch zips. That also
+# means no Vault policy, no GCOM token and no signing logic belong in this repository: the Vault
+# role is bound to plugin-ci-workflows' own job_workflow_ref, so it works from a nested call.
+#
+# Nesting: caller -> this workflow -> ci.yml is three levels, inside GitHub's 4-level cap.
+#
+# Version note:
+# `uses:` cannot be templated in a reusable-workflow call, so the plugin-ci-workflows ref below is
+# fixed rather than an input. It is currently NEWER than the ref the pilot repos pin in their own
+# `push.yml`. Keep the two aligned when either moves, so the image that ships is built by the same
+# pipeline that validated the commit.
+#
+# Ordering:
+# The image is built locally, smoke-tested, and only then pushed. A failing image must never reach
+# the GAR, which is why this does not use the org's docker-build-push-image wrapper: that action
+# gates its GAR login on push being true, so a load-only build cannot pull the private base image.
+
+name: Datasource - Build and push bundled image
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to build. Defaults to the SHA that triggered the caller.
+        type: string
+        required: false
+        default: ""
+      plugin-directory:
+        description: >-
+          Directory containing the plugin's package.json, passed to ci.yml. Note this is ci.yml's
+          meaning of the name, not cd-dev.yml's, where the same input names the directory
+          containing plugin.json.
+        type: string
+        required: false
+        default: .
+      gar-repository:
+        description: >-
+          GAR repository to push to, for example docker-clickhouse-datasource-prod. Created by
+          adding the repo to datasource_plugin_repos in deployment_tools.
+        type: string
+        required: true
+      grafana-image:
+        description: >-
+          Grafana base image to bundle onto. Left empty, it is read from the dev0 entry of
+          deployment_tools grafana-datasources/waves/api_server.jsonnet, which needs a GATB grant
+          on the caller for that repository.
+        type: string
+        required: false
+        default: ""
+      grafana-image-permission-set:
+        description: >-
+          GATB permission set to mint the deployment_tools read token with. Must match a
+          permission-sets key on the caller's grant.
+        type: string
+        required: false
+        default: default
+      push-image:
+        description: Whether to push the image once the smoke test passes.
+        type: boolean
+        required: false
+        default: true
+      trigger-argo:
+        description: Whether to submit the Argo rollout after a successful push.
+        type: boolean
+        required: false
+        default: false
+      argo-namespace:
+        description: Argo namespace holding the rollout template.
+        type: string
+        required: false
+        default: grafana-datasources-cd
+      debug:
+        description: >-
+          Build a debug image. Uses the BuildDebugLinux backend target and suffixes the tag with
+          -debug, which keeps it out of the rollout because Argo only consumes plain tags.
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      image:
+        description: Full image reference that was built, including the tag.
+        value: ${{ jobs.bundle.outputs.image }}
+      digest:
+        description: Digest of the pushed image, empty when push-image is false.
+        value: ${{ jobs.bundle.outputs.digest }}
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Builds, signs and packages the plugin. Playwright, Trufflehog and the plugin validator are off
+  # because the caller already ran them against this same commit; this call is for packaging.
+  build:
+    name: Build and sign
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.0
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      branch: ${{ inputs.ref || github.sha }}
+      plugin-directory: ${{ inputs.plugin-directory }}
+      run-playwright: false
+      run-trufflehog: false
+      backend-build-target: ${{ inputs.debug && 'BuildDebugLinux' || '' }}
+
+  resolve-grafana-image:
+    name: Resolve the Grafana base image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      grafana-image: ${{ steps.resolve.outputs.grafana-image }}
+      grafana-version: ${{ steps.resolve.outputs.grafana-version }}
+    steps:
+      # deployment_tools is private, so reading one line out of it needs an App token rather than
+      # the workflow's own GITHUB_TOKEN. Same app and action the release-please grant already uses,
+      # so no new app and no per-repo secrets: GATB resolves the credentials by app name.
+      #
+      # GATB keys the grant on the TOP-LEVEL caller workflow, so the permission set below must be
+      # granted against the plugin's own `bundled-image.yml` path in
+      # terraform/repositories/<repo>/github-app-configs/config.yaml, not against this workflow.
+      # Until that grant applies, a caller passes `grafana-image` explicitly and this is skipped.
+      - name: Get a deployment_tools read token
+        id: token
+        if: inputs.grafana-image == ''
+        continue-on-error: true
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: grafana-oss-big-tent
+          permission_set: ${{ inputs.grafana-image-permission-set }}
+
+      - name: Resolve
+        id: resolve
+        env:
+          OVERRIDE: ${{ inputs.grafana-image }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$OVERRIDE" ]; then
+            image="$OVERRIDE"
+            echo "using the grafana-image override"
+          elif [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::grafana-image was not supplied and no deployment_tools read App is" \
+                 "configured, so the base image cannot be resolved. Pass grafana-image explicitly."
+            exit 1
+          else
+            # The waves file is a jsonnet object of wave -> image ref. dev0 is the earliest wave and
+            # the one the bundled image is first rolled out to, so it defines the base to bundle onto.
+            path=ksonnet/environments/grafana-datasources/waves/api_server.jsonnet
+            image="$(
+              gh api "repos/grafana/deployment_tools/contents/${path}" --jq .content \
+                | base64 -d \
+                | grep -E "^\s*dev0:" \
+                | head -1 \
+                | sed -E "s/.*'([^']+)'.*/\1/"
+            )"
+          fi
+
+          [ -n "$image" ] || { echo "::error::could not resolve a Grafana base image"; exit 1; }
+
+          # The tag's leading semver is the Grafana version, and it becomes the middle field of the
+          # plugin image tag. Anything else means the base tag shape changed and the tag contract
+          # below would silently produce a wrong version.
+          version="$(printf '%s' "$image" | sed -E 's/.*:([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) : ;;
+            *) echo "::error::no plain X.Y.Z Grafana version in base tag: $image"; exit 1 ;;
+          esac
+
+          echo "grafana-image=$image" >> "$GITHUB_OUTPUT"
+          echo "grafana-version=$version" >> "$GITHUB_OUTPUT"
+          echo "base=$image version=$version"
+
+  bundle:
+    name: Bundle, smoke and push
+    needs: [build, resolve-grafana-image]
+    runs-on: ubuntu-latest
+    # The GAR writer identity is scoped to the prod environment.
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+      digest: ${{ steps.bundle.outputs.digest }}
+    steps:
+      - name: Download the signed dist artifacts
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: dist-artifacts
+          path: /tmp/dist-artifacts
+
+      # Artifacts expire, and the default failure is an opaque 404 from the download step.
+      - name: Report unavailable dist artifacts
+        if: steps.download.outcome == 'failure'
+        run: |
+          echo "::error::dist-artifacts could not be downloaded. If this run is a re-run of an old" \
+               "workflow, the artifacts have most likely expired; re-run the whole pipeline instead."
+          exit 1
+
+      - name: Compute the image tag
+        id: tag
+        env:
+          PLUGIN_JSON: ${{ needs.build.outputs.plugin }}
+          GRAFANA_VERSION: ${{ needs.resolve-grafana-image.outputs.grafana-version }}
+          GAR_REPOSITORY: ${{ inputs.gar-repository }}
+          IS_DEBUG: ${{ inputs.debug }}
+          SHA: ${{ inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+
+          plugin_id="$(printf '%s' "$PLUGIN_JSON" | jq -r .id)"
+          plugin_version="$(printf '%s' "$PLUGIN_JSON" | jq -r .version)"
+          [ -n "$plugin_id" ] && [ "$plugin_id" != null ] || { echo "::error::no plugin id"; exit 1; }
+
+          short_sha="${SHA:0:7}"
+          debug_suffix=""
+          [ "$IS_DEBUG" = "true" ] && debug_suffix="-debug"
+
+          # This tag shape is a contract with deployment_tools, which parses it to recover the
+          # plugin version and to decide whether a waves entry is a bundled image. Do not restyle it.
+          tag="${plugin_version}-${GRAFANA_VERSION}-${short_sha}${debug_suffix}-amd64"
+          image="us-docker.pkg.dev/grafanalabs-global/${GAR_REPOSITORY}/${plugin_id}:${tag}"
+
+          # The per-arch zip, not the universal one: it is a tenth of the size and carries only the
+          # linux_amd64 backend, which is the only architecture the image runs.
+          zip="$(find /tmp/dist-artifacts -name '*linux_amd64.zip' | head -1)"
+          [ -n "$zip" ] || { echo "::error::no linux_amd64 zip among the dist artifacts"; exit 1; }
+
+          {
+            echo "image=$image"
+            echo "plugin-id=$plugin_id"
+            echo "plugin-version=$plugin_version"
+            echo "dist-zip=$zip"
+          } >> "$GITHUB_OUTPUT"
+          echo "image=$image"
+
+      # Before the build, not after: the base image is in a private GAR and cannot be pulled
+      # without credentials.
+      - name: Log in to the GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@1f541877ceb22c7be7667d8a8df04984aeac9f9d # login-to-gar/v1.0.3
+        with:
+          registry: us-docker.pkg.dev
+          environment: prod
+
+      - name: Bundle, smoke and push
+        id: bundle
+        uses: grafana/data-sources-ci-workflows/.github/actions/bundle-plugin-image@main # zizmor: ignore[unpinned-uses]
+        with:
+          image: ${{ steps.tag.outputs.image }}
+          plugin-id: ${{ steps.tag.outputs.plugin-id }}
+          plugin-version: ${{ steps.tag.outputs.plugin-version }}
+          grafana-image: ${{ needs.resolve-grafana-image.outputs.grafana-image }}
+          dist-zip: ${{ steps.tag.outputs.dist-zip }}
+          push: ${{ inputs.push-image }}
+
+  # A debug image is deliberately not rolled out: Argo consumes plain tags, and a -debug tag would
+  # not match the shape deployment_tools expects.
+  trigger-argo:
+    name: Trigger the Argo rollout
+    needs: [build, bundle]
+    if: inputs.trigger-argo && inputs.push-image && !inputs.debug
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Submit the rollout
+        uses: grafana/shared-workflows/actions/trigger-argo-workflow@5a212d56e9d224851dc4b3c2643bbc5bac484d5d # trigger-argo-workflow/v2.0.0
+        with:
+          instance: ops
+          namespace: ${{ inputs.argo-namespace }}
+          # The rollout template is named for the datasource's config.type, which is the bare
+          # plugin id. It is not suffixed with an environment.
+          workflow_template: ${{ fromJSON(needs.build.outputs.plugin).id }}
+          parameters: |
+            dockertag=${{ needs.bundle.outputs.image }}
