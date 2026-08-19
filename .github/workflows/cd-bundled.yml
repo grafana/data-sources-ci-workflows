@@ -41,10 +41,13 @@ on:
         default: .
       gar-repository:
         description: >-
-          GAR repository to push to, for example docker-clickhouse-datasource-prod. Created by
-          adding the repo to datasource_plugin_repos in deployment_tools.
+          GAR repository to push to, for example docker-clickhouse-datasource-prod. Left empty, it
+          is derived from the calling repository as docker-<repo>-prod, which is the same rule the
+          terraform module uses to create it. Set it only for a repository whose registry does not
+          follow that rule.
         type: string
-        required: true
+        required: false
+        default: ""
       grafana-image:
         description: >-
           Grafana base image to bundle onto. Left empty, it is read from the dev0 entry of
@@ -229,14 +232,30 @@ jobs:
             exit 1
           fi
 
+          # Default the registry to the one the terraform module creates for this repository, using
+          # the same rule the module uses: docker-<repo>-prod, with underscores replaced. Deriving
+          # it here keeps the two in step by construction, so a caller cannot name a registry it has
+          # no write access to, and every caller is identical.
+          gar_repository="$GAR_REPOSITORY"
+          if [ -z "$gar_repository" ]; then
+            gar_repository="docker-$(printf '%s' "${GITHUB_REPOSITORY##*/}" | tr '_' '-')-prod"
+          fi
+
           short_sha="${SHA:0:7}"
           debug_suffix=""
-          [ "$IS_DEBUG" = "true" ] && debug_suffix="-debug"
+          package="$plugin_id"
+          if [ "$IS_DEBUG" = "true" ]; then
+            debug_suffix="-debug"
+            # Debug images live under debug/<plugin-id>, because the registry's cleanup policy
+            # matches on that prefix. A debug image pushed to the top level is never swept, and it
+            # would also sit alongside the production tags the rollout consumes.
+            package="debug/$plugin_id"
+          fi
 
           # This tag shape is a contract with deployment_tools, which parses it to recover the
           # plugin version and to decide whether a waves entry is a bundled image. Do not restyle it.
           tag="${plugin_version}-${GRAFANA_VERSION}-${short_sha}${debug_suffix}-amd64"
-          image="us-docker.pkg.dev/grafanalabs-global/${GAR_REPOSITORY}/${plugin_id}:${tag}"
+          image="us-docker.pkg.dev/grafanalabs-global/${gar_repository}/${package}:${tag}"
 
           # The per-arch zip, not the universal one: it is a tenth of the size and carries only the
           # linux_amd64 backend, which is the only architecture the image runs.
