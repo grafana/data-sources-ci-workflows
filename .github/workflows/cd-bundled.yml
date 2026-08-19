@@ -224,7 +224,10 @@ jobs:
 
           plugin_id="$(printf '%s' "$PLUGIN_JSON" | jq -r .id)"
           plugin_version="$(printf '%s' "$PLUGIN_JSON" | jq -r .version)"
-          [ -n "$plugin_id" ] && [ "$plugin_id" != null ] || { echo "::error::no plugin id"; exit 1; }
+          if [ -z "$plugin_id" ] || [ "$plugin_id" = null ]; then
+            echo "::error::ci.yml returned no plugin id, so the image name cannot be built"
+            exit 1
+          fi
 
           short_sha="${SHA:0:7}"
           debug_suffix=""
