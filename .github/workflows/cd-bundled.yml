@@ -210,6 +210,7 @@ jobs:
       id-token: write
     outputs:
       image: ${{ steps.tag.outputs.image }}
+      tag: ${{ steps.tag.outputs.tag }}
       digest: ${{ steps.bundle.outputs.digest }}
     steps:
       - name: Download the signed dist artifacts
@@ -278,6 +279,7 @@ jobs:
 
           {
             echo "image=$image"
+            echo "tag=$tag"
             echo "plugin-id=$plugin_id"
             echo "plugin-version=$plugin_version"
             echo "dist-zip=$zip"
@@ -322,8 +324,11 @@ jobs:
           # The rollout template is named for the datasource's config.type, which is the bare
           # plugin id. It is not suffixed with an environment.
           workflow_template: ${{ fromJSON(needs.build.outputs.plugin).id }}
+          # The rollout composes the waves entry as <image-base>:<dockertag>, so this must be
+          # the bare tag. Passing the full image reference doubles the path into an invalid
+          # image and the wave gate then correctly refuses to pass.
           parameters: |
-            dockertag=${{ needs.bundle.outputs.image }}
+            dockertag=${{ needs.bundle.outputs.tag }}
 
   # A bundled image that fails to build stops the datasource getting a new version, and nothing
   # else reports that. `failure()` covers a failed job anywhere above, and a skipped job does not
