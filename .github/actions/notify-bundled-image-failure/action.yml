@@ -1,0 +1,104 @@
+# Description:
+# Posts a bundled-image build failure notification to Slack using Block Kit.
+# Called by cd-bundled.yml on failure, so an adopting repo gets the alert without
+# wiring anything up.
+#
+# Why this is not the Cloud E2E notifier:
+# That action reports a test failure and its fields are test-shaped (Grafana URL,
+# datasource version under test). A build failure needs the plugin, the image and
+# the stage that broke. Reusing it would label an image build as a test run.
+#
+# Why the shared workflow owns this rather than each caller:
+# The Cloud E2E notifier is caller-owned, and that is exactly how the
+# Elasticsearch nightly failed ten times in a row without alerting anyone: its
+# cron.yml never added a notify job. Defaulting it on here means a repo has to
+# opt out deliberately instead of forgetting to opt in.
+#
+# Usage note:
+# - This action calls grafana/shared-workflows/actions/send-slack-message, which
+#   authenticates via OIDC. The calling job MUST grant `id-token: write`
+#   permissions (and `contents: read`), otherwise the Slack step will fail.
+# - Reference this action by its FULL path
+#   (grafana/data-sources-ci-workflows/.github/actions/notify-bundled-image-failure@<ref>),
+#   never by a local `./.github/actions/...` path — a local path resolves against
+#   the calling repository, not this one.
+
+name: Notify Slack on bundled image failure
+description: Post a bundled-image build failure notification to Slack.
+
+inputs:
+  slack-channel-id:
+    description: Slack channel ID to post the message to.
+    required: false
+    # #ds-release
+    default: C0BQS6PFW14
+  repo:
+    description: Repository the failure originated from (e.g. github.repository).
+    required: true
+  plugin-json:
+    description: >-
+      The build job's plugin JSON output, carrying the plugin id and version. Passed as raw JSON
+      rather than as separate inputs because the build job can fail before producing it, and
+      fromJSON on an empty string fails the expression.
+    required: false
+    default: ""
+  job-results:
+    description: >-
+      JSON object of job name to result, used to name the stage that broke. A skipped job is not
+      reported as a failure.
+    required: false
+    default: ""
+  image:
+    description: Image reference that was being built, when the run got far enough to compute it.
+    required: false
+    default: ""
+  grafana-image:
+    description: Grafana base image the plugin was being baked onto.
+    required: false
+    default: ""
+  ref-name:
+    description: Git ref name the run was triggered on (e.g. github.ref_name).
+    required: false
+    default: ""
+  actor:
+    description: User that triggered the run (e.g. github.actor).
+    required: false
+    default: ""
+  sha:
+    description: Commit SHA associated with the run (e.g. github.sha).
+    required: false
+    default: ""
+  run-url:
+    description: URL of the failed workflow run.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build Slack notification payload
+      id: slack-payload
+      shell: bash
+      env:
+        SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        REPO: ${{ inputs.repo }}
+        PLUGIN_JSON: ${{ inputs.plugin-json }}
+        JOB_RESULTS: ${{ inputs.job-results }}
+        IMAGE: ${{ inputs.image }}
+        GRAFANA_IMAGE: ${{ inputs.grafana-image }}
+        REF_NAME: ${{ inputs.ref-name }}
+        ACTOR: ${{ inputs.actor }}
+        SHA: ${{ inputs.sha }}
+        RUN_URL: ${{ inputs.run-url }}
+      run: |
+        {
+          echo "payload<<EOF"
+          python3 "$GITHUB_ACTION_PATH/build_payload.py"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Notify Slack
+      uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+      with:
+        method: chat.postMessage
+        payload: ${{ steps.slack-payload.outputs.payload }}
+        payload-templated: false

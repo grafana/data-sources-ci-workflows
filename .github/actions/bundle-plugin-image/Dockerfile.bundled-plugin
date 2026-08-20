@@ -1,0 +1,44 @@
+# Builds a Docker image containing Grafana with a bundled datasource plugin.
+# The plugin is copied from a locally unpacked, signed dist/ directory.
+#
+# Image tag format: <plugin-version>-<grafana-version>-<short-sha>[-debug]-amd64
+# Example: 4.20.0-13.3.0-58e7485-amd64
+#
+# Build args:
+#   GRAFANA_IMAGE     - Full grafana-pro image reference (required)
+#   PLUGIN_ID         - Plugin identifier, e.g. grafana-clickhouse-datasource (required)
+#   PLUGIN_VERSION    - Plugin version being bundled (required)
+#   SOURCE_REPO_URL   - Repository the plugin was built from (required)
+
+ARG GRAFANA_IMAGE=undefined
+
+FROM ${GRAFANA_IMAGE} AS grafana-source
+
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+
+ARG PLUGIN_ID
+ARG PLUGIN_VERSION
+ARG GRAFANA_IMAGE
+ARG SOURCE_REPO_URL
+
+COPY --from=grafana-source /usr/share/grafana /usr/share/grafana
+
+# Plugin path must match the --plugins-path argument in the deployment
+# (./data/datasource-plugins).
+# --chmod=0755 restores the executable bit on the plugin backend binary (gpx_*): GitHub Actions
+# upload/download-artifact drops Unix permissions, so without this the binary lands non-executable
+# and the apiserver fails with "fork/exec ...: permission denied". chmod does not affect the plugin
+# signature (MANIFEST.txt hashes file contents, not modes).
+COPY --chmod=0755 --chown=65532:65532 dist/ /usr/share/grafana/data/datasource-plugins/${PLUGIN_ID}/
+
+LABEL org.opencontainers.image.title="grafana-ds-${PLUGIN_ID}" \
+      org.opencontainers.image.source="${SOURCE_REPO_URL}" \
+      grafana.base_image="${GRAFANA_IMAGE}" \
+      plugin.id="${PLUGIN_ID}" \
+      plugin.version="${PLUGIN_VERSION}"
+
+USER 65532:65532
+WORKDIR /usr/share/grafana
+
+ENTRYPOINT ["/usr/share/grafana/bin/grafana"]
+CMD ["apiserver"]
