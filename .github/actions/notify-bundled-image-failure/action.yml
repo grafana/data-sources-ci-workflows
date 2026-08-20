@@ -28,10 +28,13 @@ description: Post a bundled-image build failure notification to Slack.
 
 inputs:
   slack-channel-id:
-    description: Slack channel ID to post the message to.
+    description: >-
+      Slack channel ID to post the message to. Left empty, the default in
+      build_payload.py is used (#ds-release). The default lives there rather than
+      here because a caller that passes this input as an empty string bypasses a
+      composite input default entirely.
     required: false
-    # #ds-release
-    default: C0BQS6PFW14
+    default: ""
   repo:
     description: Repository the failure originated from (e.g. github.repository).
     required: true
