@@ -10,6 +10,11 @@ unit-testable rather than embedded in the composite action's YAML.
 import json
 import os
 
+# #ds-release. The single source of the default: action.yml deliberately defaults its
+# input to the empty string, because a caller that passes an explicitly empty value
+# bypasses a composite input's default entirely, and the notification then goes nowhere.
+DEFAULT_CHANNEL = "C0BQS6PFW14"
+
 
 def slack_escape(value: str) -> str:
     """Escape the three characters Slack mrkdwn treats as control characters."""
@@ -89,7 +94,7 @@ def build_payload(env: dict[str, str]) -> dict:
     fields.append({"type": "mrkdwn", "text": f"*Commit:*\n`{sha}`"})
 
     return {
-        "channel": env["SLACK_CHANNEL_ID"],
+        "channel": env.get("SLACK_CHANNEL_ID") or DEFAULT_CHANNEL,
         "text": fallback,
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": f":x: *Bundled image build failed*\n{fallback}"}},

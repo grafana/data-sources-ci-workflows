@@ -7,7 +7,7 @@ Run with: python3 -m unittest test_build_payload
 import json
 import unittest
 
-from build_payload import build_payload, failed_stages, plugin_identity, slack_escape
+from build_payload import DEFAULT_CHANNEL, build_payload, failed_stages, plugin_identity, slack_escape
 
 BASE_ENV = {
     "SLACK_CHANNEL_ID": "C0BQS6PFW14",
@@ -107,6 +107,13 @@ class BuildPayloadTest(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(failed_stages(raw), [])
                 self.assertIn("*Failed at:*\nunknown", field_texts(build_payload({**BASE_ENV, "JOB_RESULTS": raw})))
+
+    def test_channel_falls_back_when_empty_or_missing(self):
+        # A caller that passes the input as an empty string bypasses the composite
+        # default, which is how run 32415750224's notification posted to channel "".
+        for env in ({**BASE_ENV, "SLACK_CHANNEL_ID": ""}, {k: v for k, v in BASE_ENV.items() if k != "SLACK_CHANNEL_ID"}):
+            with self.subTest(has_key="SLACK_CHANNEL_ID" in env):
+                self.assertEqual(build_payload(env)["channel"], DEFAULT_CHANNEL)
 
     def test_sha_truncated_to_eight(self):
         self.assertIn("*Commit:*\n`01234567`", field_texts(build_payload(BASE_ENV)))
