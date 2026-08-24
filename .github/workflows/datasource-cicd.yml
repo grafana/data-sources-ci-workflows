@@ -19,6 +19,15 @@ name: Datasource - CI/CD
 
 on:
   workflow_call:
+    inputs:
+      trufflehog-exclude-detectors:
+        description: |
+          Comma-separated list of TruffleHog detector types to exclude, forwarded
+          to cd.yml. Set it when a detector false-positives on the plugin's signed
+          build output. Without this pass-through a caller cannot express the
+          exclusion, because it does not call cd.yml directly.
+        type: string
+        required: false
     outputs:
       release_created:
         description: Whether release-please cut a release on this run.
@@ -107,3 +116,4 @@ jobs:
       release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
       run-playwright: false
       github-draft-release: false
+      trufflehog-exclude-detectors: ${{ inputs.trufflehog-exclude-detectors }}
