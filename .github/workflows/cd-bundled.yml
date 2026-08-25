@@ -158,7 +158,7 @@ jobs:
         continue-on-error: true
         uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
-          github_app: grafana-oss-big-tent
+          github_app: updater-for-ci
           permission_set: ${{ inputs.grafana-image-permission-set }}
 
       - name: Resolve
