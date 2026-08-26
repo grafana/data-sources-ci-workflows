@@ -3,6 +3,11 @@
 # pushes it to the plugin's own prod GAR, and optionally triggers the Argo rollout. Plugin repos
 # call this from a thin `bundled-image.yml` caller.
 #
+# The caller's event picks the rollout scope. A push to main builds, pushes, and triggers the
+# `<plugin-id>-dev` rollout (dev0 only), so every merge ships the backend to dev through the
+# gate. A manual dispatch keeps the explicit push-image/trigger-argo inputs and targets the full
+# `<plugin-id>` rollout.
+#
 # The build is not reimplemented here. It calls plugin-ci-workflows/ci.yml, which already builds
 # the frontend and backend, signs the plugin against GCOM, and packages per-arch zips. That also
 # means no Vault policy, no GCOM token and no signing logic belong in this repository: the Vault
@@ -303,14 +308,14 @@ jobs:
           plugin-version: ${{ steps.tag.outputs.plugin-version }}
           grafana-image: ${{ needs.resolve-grafana-image.outputs.grafana-image }}
           dist-zip: ${{ steps.tag.outputs.dist-zip }}
-          push: ${{ inputs.push-image }}
+          push: ${{ github.event_name == 'push' || inputs.push-image }}
 
   # A debug image is deliberately not rolled out: Argo consumes plain tags, and a -debug tag would
   # not match the shape deployment_tools expects.
   trigger-argo:
     name: Trigger the Argo rollout
     needs: [build, bundle]
-    if: inputs.trigger-argo && inputs.push-image && !inputs.debug
+    if: (github.event_name == 'push' || (inputs.trigger-argo && inputs.push-image)) && !inputs.debug
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -321,9 +326,10 @@ jobs:
         with:
           instance: ops
           namespace: ${{ inputs.argo-namespace }}
-          # The rollout template is named for the datasource's config.type, which is the bare
-          # plugin id. It is not suffixed with an environment.
-          workflow_template: ${{ fromJSON(needs.build.outputs.plugin).id }}
+          # The rollout template is named for the datasource's config.type, the bare plugin
+          # id. A push to main targets the `<id>-dev` template (dev0 only); a dispatch
+          # targets the full `<id>` rollout.
+          workflow_template: ${{ github.event_name == 'push' && format('{0}-dev', fromJSON(needs.build.outputs.plugin).id) || fromJSON(needs.build.outputs.plugin).id }}
           # The rollout composes the waves entry as <image-base>:<dockertag>, so this must be
           # the bare tag. Passing the full image reference doubles the path into an invalid
           # image and the wave gate then correctly refuses to pass.
