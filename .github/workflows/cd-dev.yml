@@ -49,9 +49,10 @@ on:
       deploy:
         description: >-
           Trigger the Argo rollout that deploys the published build to the shared Cloud
-          E2E instance. Data sources on bundled images set false: their backend ships
-          per merge through the bundled pipeline, and this workflow then only publishes
-          the frontend to the dev catalog.
+          E2E instance. The catalog publish always includes the full plugin, backend
+          binaries included. This input only controls the rollout. Data sources on
+          bundled images set false: their backend reaches Cloud per merge through the
+          bundled pipeline instead.
         type: boolean
         required: false
         default: true
