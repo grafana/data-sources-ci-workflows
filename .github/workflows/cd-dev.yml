@@ -46,6 +46,16 @@ on:
         type: string
         required: false
         default: "src"
+      deploy:
+        description: >-
+          Trigger the Argo rollout that deploys the published build to the shared Cloud
+          E2E instance. The catalog publish always includes the full plugin, backend
+          binaries included. This input only controls the rollout. Data sources on
+          bundled images set false: their backend reaches Cloud per merge through the
+          bundled pipeline instead.
+        type: boolean
+        required: false
+        default: true
 
 defaults:
   run:
@@ -86,6 +96,7 @@ jobs:
     name: Trigger Argo Workflow
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: ${{ inputs.deploy }}
     needs: publish-to-catalog
     permissions:
       contents: read
