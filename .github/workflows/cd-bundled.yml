@@ -124,8 +124,12 @@ defaults:
 jobs:
   # Builds, signs and packages the plugin. Playwright, Trufflehog and the plugin validator are off
   # because the caller already ran them against this same commit; this call is for packaging.
+  # A release-please merge is skipped on the push path: the release it creates fires the full
+  # rollout for the same commit moments later, and running both duplicates the build, the image
+  # push, and the dev0 waves write.
   build:
     name: Build and sign
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
     uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.0
     permissions:
       contents: read
