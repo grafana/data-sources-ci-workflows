@@ -44,7 +44,7 @@ jobs:
     if: github.event_name == 'pull_request'
     # GitHub forbids expressions in a reusable-workflow `uses:` ref, so this ref
     # is static here (bumped centrally in this repo, e.g. by Renovate).
-    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v10.1.0
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.1
     permissions:
       contents: read
       id-token: write
@@ -102,7 +102,7 @@ jobs:
     name: Publish to prod catalog
     if: github.ref == 'refs/heads/main' && needs.release-please.outputs.release_created == 'true'
     needs: release-please
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v10.1.0
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v11.1.1
     permissions:
       contents: write
       id-token: write
