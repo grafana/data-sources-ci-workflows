@@ -130,7 +130,7 @@ jobs:
   build:
     name: Build and sign
     if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
-    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.0
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.1
     permissions:
       contents: read
       id-token: write
