@@ -94,6 +94,7 @@ jobs:
       environment: ${{ inputs.environment }}
       scopes: ${{ inputs.scopes }}
       docs-only: ${{ inputs.docs-only }}
+      release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
       run-playwright: false
       github-draft-release: false
       trufflehog-exclude-detectors: ${{ inputs.trufflehog-exclude-detectors }}
