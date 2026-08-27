@@ -129,7 +129,7 @@ jobs:
   # push, and the dev0 waves write.
   build:
     name: Build and sign
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
     uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.0
     permissions:
       contents: read
