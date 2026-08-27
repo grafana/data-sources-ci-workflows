@@ -311,14 +311,14 @@ jobs:
           plugin-version: ${{ steps.tag.outputs.plugin-version }}
           grafana-image: ${{ needs.resolve-grafana-image.outputs.grafana-image }}
           dist-zip: ${{ steps.tag.outputs.dist-zip }}
-          push: ${{ github.event_name == 'push' || inputs.push-image == 'true' }}
+          push: ${{ github.event_name == 'push' || github.event_name == 'release' || inputs.push-image == 'true' }}
 
   # A debug image is deliberately not rolled out: Argo consumes plain tags, and a -debug tag would
   # not match the shape deployment_tools expects.
   trigger-argo:
     name: Trigger the Argo rollout
     needs: [build, bundle]
-    if: (github.event_name == 'push' || (inputs.trigger-argo == 'true' && inputs.push-image == 'true')) && inputs.debug != 'true'
+    if: (github.event_name == 'push' || github.event_name == 'release' || (inputs.trigger-argo == 'true' && inputs.push-image == 'true')) && inputs.debug != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
