@@ -162,7 +162,9 @@ jobs:
         uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
         with:
           github_app: updater-for-ci
-          permission_set: ${{ inputs.grafana-image-permission-set }}
+          # Release events run at the tag ref, which the default set's branch scope
+          # does not cover; the grants carry a release-scoped set for them.
+          permission_set: ${{ github.event_name == 'release' && 'release' || inputs.grafana-image-permission-set }}
 
       - name: Resolve
         id: resolve
