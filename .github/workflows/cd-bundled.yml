@@ -69,15 +69,18 @@ on:
         required: false
         default: default
       push-image:
-        description: Whether to push the image once the smoke test passes.
-        type: boolean
+        description: >-
+          Whether to push the image once the smoke test passes ('true'/'false'). Typed string
+          because push-event callers forward an empty inputs context, and an empty value fails
+          boolean type validation at workflow startup before any job runs.
+        type: string
         required: false
-        default: true
+        default: 'true'
       trigger-argo:
-        description: Whether to submit the Argo rollout after a successful push.
-        type: boolean
+        description: Whether to submit the Argo rollout after a successful push ('true'/'false').
+        type: string
         required: false
-        default: false
+        default: 'false'
       argo-namespace:
         description: Argo namespace holding the rollout template.
         type: string
@@ -87,17 +90,17 @@ on:
         description: >-
           Build a debug image. Uses the BuildDebugLinux backend target and suffixes the tag with
           -debug, which keeps it out of the rollout because Argo only consumes plain tags.
-        type: boolean
+        type: string
         required: false
-        default: false
+        default: 'false'
       notify-on-failure:
         description: >-
           Post to Slack when the pipeline fails. On by default: the Cloud E2E notifier is
           caller-owned and one repo simply never wired it up, which is how a nightly failed ten
           times in a row silently. Opting out has to be deliberate.
-        type: boolean
+        type: string
         required: false
-        default: true
+        default: 'true'
       slack-channel-id:
         description: >-
           Slack channel to notify. Left empty, the notify action's own default is used.
@@ -132,7 +135,7 @@ jobs:
       plugin-directory: ${{ inputs.plugin-directory }}
       run-playwright: false
       run-trufflehog: false
-      backend-build-target: ${{ inputs.debug && 'BuildDebugLinux' || '' }}
+      backend-build-target: ${{ inputs.debug == 'true' && 'BuildDebugLinux' || '' }}
 
   resolve-grafana-image:
     name: Resolve the Grafana base image
@@ -240,7 +243,7 @@ jobs:
           PLUGIN_JSON: ${{ needs.build.outputs.plugin }}
           GRAFANA_VERSION: ${{ needs.resolve-grafana-image.outputs.grafana-version }}
           GAR_REPOSITORY: ${{ inputs.gar-repository }}
-          IS_DEBUG: ${{ inputs.debug }}
+          IS_DEBUG: ${{ inputs.debug == 'true' }}
           SHA: ${{ inputs.ref || github.sha }}
         run: |
           set -euo pipefail
@@ -308,14 +311,14 @@ jobs:
           plugin-version: ${{ steps.tag.outputs.plugin-version }}
           grafana-image: ${{ needs.resolve-grafana-image.outputs.grafana-image }}
           dist-zip: ${{ steps.tag.outputs.dist-zip }}
-          push: ${{ github.event_name == 'push' || inputs.push-image }}
+          push: ${{ github.event_name == 'push' || inputs.push-image == 'true' }}
 
   # A debug image is deliberately not rolled out: Argo consumes plain tags, and a -debug tag would
   # not match the shape deployment_tools expects.
   trigger-argo:
     name: Trigger the Argo rollout
     needs: [build, bundle]
-    if: (github.event_name == 'push' || (inputs.trigger-argo && inputs.push-image)) && !inputs.debug
+    if: (github.event_name == 'push' || (inputs.trigger-argo == 'true' && inputs.push-image == 'true')) && inputs.debug != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -342,7 +345,7 @@ jobs:
   notify-failure:
     name: Notify on failure
     needs: [build, resolve-grafana-image, bundle, trigger-argo]
-    if: failure() && inputs.notify-on-failure
+    if: failure() && inputs.notify-on-failure == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
