@@ -5,8 +5,11 @@
 #
 # The caller's event picks the rollout scope. A push to main builds, pushes, and triggers the
 # `<plugin-id>-dev` rollout (dev0 only), so every merge ships the backend to dev through the
-# gate. A manual dispatch keeps the explicit push-image/trigger-argo inputs and targets the full
-# `<plugin-id>` rollout.
+# gate — except a release-please merge, which the build job skips so the release event owns that
+# commit. A published release builds from the tag, pushes, and triggers the full `<plugin-id>`
+# rollout, so merging a release PR delivers it to Cloud. A manual dispatch keeps the explicit
+# push-image/trigger-argo inputs, targets the full `<plugin-id>` rollout, and stays as the
+# fallback.
 #
 # The build is not reimplemented here. It calls plugin-ci-workflows/ci.yml, which already builds
 # the frontend and backend, signs the plugin against GCOM, and packages per-arch zips. That also
