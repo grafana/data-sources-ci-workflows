@@ -8,6 +8,12 @@
 # (e.g. a nightly cron.yml) should add their own job that runs `if: failure()` on the
 # job calling this workflow and invokes:
 #   grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@main
+#
+# On failure, test-results/ and playwright-report/ (traces, screenshots, and - if the
+# caller's playwright.config.ts enables it - videos) are uploaded as a GitHub Actions
+# artifact named playwright-results-<run-stage>-<run-id>, attached to the caller's own
+# workflow run. Bench's own container is torn down after the run and retains nothing,
+# so this is the only way to inspect a Cloud failure after the fact.
 
 name: Plugins - Playwright E2E tests against Grafana Cloud
 
@@ -216,3 +222,13 @@ jobs:
             --test-env GRAFANA_URL \
             --test-runner playwright \
             --test-verbose
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-results-${{ inputs.run-stage }}-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 30
