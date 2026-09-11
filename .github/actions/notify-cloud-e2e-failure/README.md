@@ -70,6 +70,41 @@ jobs:
 | `actor`              | No       | User that triggered the run (e.g. `github.actor`).                                                       |
 | `sha`                | No       | Commit SHA associated with the run (e.g. `github.sha`).                                                 |
 
+## Outputs
+
+| Name         | Description                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `ts`         | Timestamp identifying the posted message. Pass it as `thread_ts` to reply under it, or as `ts` to update it. |
+| `channel-id` | Channel the message was posted to, resolved from the input or its default.                                   |
+
+Slack assigns a message its identity on post, so these are the only handle a
+caller has on the notification afterwards. Give the step an `id` and follow up
+through `send-slack-message` directly:
+
+```yaml
+      - name: Notify Slack on failure
+        id: notify
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@main
+        with:
+          repo: ${{ github.repository }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Reply in the thread
+        uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
+        with:
+          method: chat.postMessage
+          payload: |
+            {
+              "channel": "${{ steps.notify.outputs.channel-id }}",
+              "thread_ts": "${{ steps.notify.outputs.ts }}",
+              "text": "Triage started."
+            }
+```
+
+To hand the identity to a later workflow rather than a later step, persist it as
+an artifact: a `workflow_run` consumer can read the triggering run's artifacts,
+but not its job outputs.
+
 ## Payload and tests
 
 The Slack Block Kit payload is built by `build_payload.py`, which reads the inputs from

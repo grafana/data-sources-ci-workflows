@@ -54,6 +54,17 @@ inputs:
     description: URL of the failed workflow run.
     required: true
 
+# Slack assigns a message its identity on post, so a caller that wants to thread
+# under this notification or edit it later has no way to address it unless the
+# identity is handed back. Both values come straight from send-slack-message.
+outputs:
+  ts:
+    description: Timestamp identifying the posted message, used as `thread_ts` to reply under it or as `ts` to update it.
+    value: ${{ steps.notify-slack.outputs.ts }}
+  channel-id:
+    description: Channel the message was posted to, resolved from the input or its default.
+    value: ${{ steps.notify-slack.outputs.channel_id }}
+
 runs:
   using: composite
   steps:
@@ -78,6 +89,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Notify Slack
+      id: notify-slack
       uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
       with:
         method: chat.postMessage
