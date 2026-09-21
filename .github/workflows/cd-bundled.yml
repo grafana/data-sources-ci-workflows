@@ -143,6 +143,10 @@ jobs:
       run-playwright: false
       run-trufflehog: false
       backend-build-target: ${{ inputs.debug == 'true' && 'BuildDebugLinux' || '' }}
+      # This pipeline consumes the dist-artifacts GitHub artifact only. Without this, ci.yml also
+      # copies the zips to the integration-artifacts GCS bucket, which is readable outside GitHub,
+      # so a build from a private security mirror would publish the unreleased fix.
+      disable-gcs-upload: true
 
   resolve-grafana-image:
     name: Resolve the Grafana base image
