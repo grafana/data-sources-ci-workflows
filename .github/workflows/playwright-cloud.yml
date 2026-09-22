@@ -216,3 +216,14 @@ jobs:
             --test-env GRAFANA_URL \
             --test-runner playwright \
             --test-verbose
+
+      - name: Upload Playwright report and traces
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-cloud-${{ inputs.run-stage }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
