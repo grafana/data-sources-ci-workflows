@@ -72,6 +72,23 @@ class BuildPayloadTest(unittest.TestCase):
         texts = field_texts(build_payload(env))
         self.assertIn("*Triggered by:*\na&lt;b&gt;&amp;c", texts)
 
+    def test_channel_defaults_to_dev_profile(self):
+        env = {**BASE_ENV, "SLACK_CHANNEL_ID": ""}
+        self.assertEqual(build_payload(env)["channel"], "C0APH909GFK")
+
+    def test_release_profile_channel(self):
+        env = {**BASE_ENV, "SLACK_CHANNEL_ID": "", "NOTIFY_PROFILE": "release"}
+        self.assertEqual(build_payload(env)["channel"], "C0BQS6PFW14")
+
+    def test_explicit_channel_overrides_profile(self):
+        env = {**BASE_ENV, "SLACK_CHANNEL_ID": "C0CUSTOM", "NOTIFY_PROFILE": "release"}
+        self.assertEqual(build_payload(env)["channel"], "C0CUSTOM")
+
+    def test_unknown_profile_raises(self):
+        env = {**BASE_ENV, "SLACK_CHANNEL_ID": "", "NOTIFY_PROFILE": "prod"}
+        with self.assertRaises(ValueError):
+            build_payload(env)
+
 
 if __name__ == "__main__":
     unittest.main()

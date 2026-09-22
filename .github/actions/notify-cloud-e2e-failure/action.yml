@@ -18,11 +18,17 @@ name: Notify Slack on Cloud E2E failure
 description: Post a Cloud E2E test failure notification to Slack.
 
 inputs:
-  slack-channel-id:
-    description: Slack channel ID to post the message to.
+  notify-profile:
+    description: |
+      Notification profile that selects the Slack channel. One of:
+      - dev: #grafana-ds-plugins-dev (default)
+      - release: #ds-release, for datasources on DER and progressive delivery
     required: false
-    # #grafana-ds-plugins-dev
-    default: C0APH909GFK
+    default: dev
+  slack-channel-id:
+    description: Explicit Slack channel ID to post the message to. Overrides notify-profile when set.
+    required: false
+    default: ""
   repo:
     description: Repository the failure originated from (e.g. github.repository).
     required: true
@@ -73,6 +79,7 @@ runs:
       shell: bash
       env:
         SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        NOTIFY_PROFILE: ${{ inputs.notify-profile }}
         REPO: ${{ inputs.repo }}
         RUN_STAGE: ${{ inputs.run-stage }}
         GRAFANA_URL: ${{ inputs.grafana-url }}

@@ -10,6 +10,22 @@ unit-testable rather than embedded in the composite action's YAML.
 import json
 import os
 
+# Channel each notify-profile posts to. An explicit SLACK_CHANNEL_ID overrides these.
+PROFILE_CHANNELS = {
+    "dev": "C0APH909GFK",  # #grafana-ds-plugins-dev
+    "release": "C0BQS6PFW14",  # #ds-release
+}
+
+
+def resolve_channel(env: dict[str, str]) -> str:
+    """Pick the channel: an explicit SLACK_CHANNEL_ID wins, else the NOTIFY_PROFILE's channel."""
+    if env.get("SLACK_CHANNEL_ID"):
+        return env["SLACK_CHANNEL_ID"]
+    profile = env.get("NOTIFY_PROFILE") or "dev"
+    if profile not in PROFILE_CHANNELS:
+        raise ValueError(f"unknown notify-profile {profile!r}; expected one of {sorted(PROFILE_CHANNELS)}")
+    return PROFILE_CHANNELS[profile]
+
 
 def slack_escape(value: str) -> str:
     """Escape the three characters Slack mrkdwn treats as control characters."""
@@ -41,7 +57,7 @@ def build_payload(env: dict[str, str]) -> dict:
     fields.append({"type": "mrkdwn", "text": f"*Commit:*\n`{sha}`"})
 
     return {
-        "channel": env["SLACK_CHANNEL_ID"],
+        "channel": resolve_channel(env),
         "text": fallback,
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": f":x: *Cloud E2E tests failed*\n{fallback}"}},

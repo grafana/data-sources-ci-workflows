@@ -5,7 +5,26 @@ Used by callers of `playwright-cloud.yml` (e.g. a plugin's `cron.yml`) to
 notify on failure, since the reusable workflow itself stays focused on
 running the tests and doesn't own notification policy.
 
-Defaults to posting to `#grafana-ds-plugins-dev` (`C0APH909GFK`).
+## Channel selection
+
+The `notify-profile` input picks the channel:
+
+| Profile           | Channel                                  | Use for                                                        |
+| ----------------- | ---------------------------------------- | -------------------------------------------------------------- |
+| `dev` (default)   | `#grafana-ds-plugins-dev` (`C0APH909GFK`) | Every other datasource.                                        |
+| `release`         | `#ds-release` (`C0BQS6PFW14`)             | Datasources on DER and progressive delivery (`datasource-cicd.yml` + `cd-bundled.yml`). |
+
+An explicit `slack-channel-id` overrides the profile. An unknown profile fails
+the step instead of posting to the wrong channel.
+
+`notify-profile` first shipped in `notify-cloud-e2e-failure/v1.0.0`. Release-managed
+datasources pin that tag and opt in:
+
+```yaml
+        uses: grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@notify-cloud-e2e-failure/v1.0.0
+        with:
+          notify-profile: release
+```
 
 ## Example: notify on a nightly Cloud E2E failure
 
@@ -62,7 +81,8 @@ jobs:
 | -------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
 | `repo`               | Yes      | Repository the failure originated from (e.g. `github.repository`).                                      |
 | `run-url`            | Yes      | URL of the failed workflow run.                                                                          |
-| `slack-channel-id`   | No       | Slack channel ID to post to. Defaults to `#grafana-ds-plugins-dev`.                                      |
+| `notify-profile`     | No       | Channel profile: `dev` (default) or `release`. See [Channel selection](#channel-selection).              |
+| `slack-channel-id`   | No       | Explicit Slack channel ID to post to. Overrides `notify-profile` when set.                               |
 | `run-stage`          | No       | Rollout stage the run represents (`pr`, `main`, `nightly`, `dev0`, `ops`, `prod0`-`prod4`, `catalog`).   |
 | `grafana-url`        | No       | Grafana Cloud instance URL the tests ran against.                                                        |
 | `datasource-version` | No       | Datasource plugin version under test.                                                                   |
