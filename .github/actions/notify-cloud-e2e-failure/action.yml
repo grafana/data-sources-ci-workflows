@@ -1,13 +1,16 @@
 # Description:
-# Posts a Cloud E2E test failure notification to Slack using Block Kit.
+# Posts a Cloud E2E test failure notification to Slack using Block Kit, as a
+# reply in a single thread per UTC day so every caller's nightly failures land
+# together (see README.md).
 # Intended for callers of playwright-cloud.yml (e.g. a plugin's cron.yml) to
 # notify on failure, since the reusable workflow itself doesn't own
 # notification policy.
 #
 # Usage note:
-# - This action calls grafana/shared-workflows/actions/send-slack-message, which
-#   authenticates via OIDC. The calling job MUST grant `id-token: write`
-#   permissions (and `contents: read`), otherwise the Slack step will fail.
+# - This action fetches the Slack token through
+#   grafana/shared-workflows/actions/get-vault-secrets, which authenticates via
+#   OIDC. The calling job MUST grant `id-token: write` permissions (and
+#   `contents: read`), otherwise the Slack step will fail.
 # - Reference this action by its FULL path
 #   (grafana/data-sources-ci-workflows/.github/actions/notify-cloud-e2e-failure@<ref>),
 #   never by a local `./.github/actions/...` path — a local path resolves against
@@ -21,8 +24,12 @@ inputs:
   slack-channel-id:
     description: Slack channel ID to post the message to.
     required: false
-    # #grafana-ds-plugins-dev
-    default: C0APH909GFK
+    # #grafana-data-sources-releases
+    default: C0BQS6PFW14
+  daily-thread:
+    description: Post as a reply in the channel's shared thread for the current UTC day ("true"), or as a top-level message ("false").
+    required: false
+    default: "true"
   repo:
     description: Repository the failure originated from (e.g. github.repository).
     required: true
@@ -56,23 +63,38 @@ inputs:
 
 # Slack assigns a message its identity on post, so a caller that wants to thread
 # under this notification or edit it later has no way to address it unless the
-# identity is handed back. Both values come straight from send-slack-message.
+# identity is handed back. All values come straight from post_notification.py.
 outputs:
   ts:
-    description: Timestamp identifying the posted message, used as `thread_ts` to reply under it or as `ts` to update it.
+    description: Timestamp identifying the posted message, used as `ts` to update it.
     value: ${{ steps.notify-slack.outputs.ts }}
+  thread-ts:
+    description: Timestamp of the day's parent message the notification replied under, used as `thread_ts` to add to the thread. Empty when posted top level.
+    value: ${{ steps.notify-slack.outputs.thread-ts }}
   channel-id:
     description: Channel the message was posted to, resolved from the input or its default.
-    value: ${{ steps.notify-slack.outputs.channel_id }}
+    value: ${{ steps.notify-slack.outputs.channel-id }}
 
 runs:
   using: composite
   steps:
-    - name: Build Slack notification payload
-      id: slack-payload
+    # The same token send-slack-message uses. Fetched directly because the
+    # daily thread lookup needs conversations.history's response, which
+    # send-slack-message doesn't expose.
+    - name: Get a Slack token
+      id: get-secrets
+      uses: grafana/shared-workflows/actions/get-vault-secrets@e46fe1e9a2bf9e618bcf8d8d32f3a7381b45c06d # get-vault-secrets/v2.0.0
+      with:
+        common_secrets: |
+          SLACK_BOT_TOKEN=slack-notifications:oauth-token
+
+    - name: Notify Slack
+      id: notify-slack
       shell: bash
       env:
+        SLACK_BOT_TOKEN: ${{ fromJSON(steps.get-secrets.outputs.secrets).SLACK_BOT_TOKEN }}
         SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        DAILY_THREAD: ${{ inputs.daily-thread }}
         REPO: ${{ inputs.repo }}
         RUN_STAGE: ${{ inputs.run-stage }}
         GRAFANA_URL: ${{ inputs.grafana-url }}
@@ -81,17 +103,4 @@ runs:
         ACTOR: ${{ inputs.actor }}
         SHA: ${{ inputs.sha }}
         RUN_URL: ${{ inputs.run-url }}
-      run: |
-        {
-          echo "payload<<EOF"
-          python3 "$GITHUB_ACTION_PATH/build_payload.py"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-
-    - name: Notify Slack
-      id: notify-slack
-      uses: grafana/shared-workflows/actions/send-slack-message@551bc8d50017d3e95d5da3f8a4826e733a208dc0 # send-slack-message/v3.0.2
-      with:
-        method: chat.postMessage
-        payload: ${{ steps.slack-payload.outputs.payload }}
-        payload-templated: false
+      run: python3 "$GITHUB_ACTION_PATH/post_notification.py"
