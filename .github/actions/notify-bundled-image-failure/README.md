@@ -2,7 +2,7 @@
 
 Composite action that posts a bundled-image build failure notification to Slack.
 
-Defaults to posting to `#ds-release` (`C0BQS6PFW14`).
+Defaults to posting to `#grafana-data-sources-releases` (`C0BQS6PFW14`).
 
 `cd-bundled.yml` already calls this on failure, so a repo that adopts bundled
 images gets the alert without wiring anything up. Set `notify-on-failure: false`
