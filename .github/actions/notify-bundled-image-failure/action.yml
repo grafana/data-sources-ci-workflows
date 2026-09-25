@@ -30,9 +30,9 @@ inputs:
   slack-channel-id:
     description: >-
       Slack channel ID to post the message to. Left empty, the default in
-      build_payload.py is used (#ds-release). The default lives there rather than
-      here because a caller that passes this input as an empty string bypasses a
-      composite input default entirely.
+      build_payload.py is used (#grafana-data-sources-releases). The default
+      lives there rather than here because a caller that passes this input as an
+      empty string bypasses a composite input default entirely.
     required: false
     default: ""
   repo:
