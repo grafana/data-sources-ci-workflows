@@ -72,6 +72,16 @@ class BuildPayloadTest(unittest.TestCase):
         texts = field_texts(build_payload(env))
         self.assertIn("*Triggered by:*\na&lt;b&gt;&amp;c", texts)
 
+    def test_scheduled_run_shows_scheduler_instead_of_actor(self):
+        env = {**BASE_ENV, "EVENT_NAME": "schedule"}
+        texts = field_texts(build_payload(env))
+        self.assertIn("*Triggered by:*\nscheduler", texts)
+
+    def test_non_scheduled_run_keeps_actor(self):
+        env = {**BASE_ENV, "EVENT_NAME": "workflow_dispatch"}
+        texts = field_texts(build_payload(env))
+        self.assertIn("*Triggered by:*\noctocat", texts)
+
 
 if __name__ == "__main__":
     unittest.main()
