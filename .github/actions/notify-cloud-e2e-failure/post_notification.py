@@ -1,35 +1,24 @@
 #!/usr/bin/env python3
-"""Post a Cloud E2E failure notification into the day's shared Slack thread.
+"""Post a Cloud E2E failure notification, threading replies under a daily parent."""
 
-Every caller's nightly cron fires at the same time, so rather than one
-top-level message per failing repository, failures for a UTC day are collected
-as replies under a single parent message. The parent is found by its message
-metadata (not its text), created by whichever run fails first, and
-de-duplicated if two runs race to create it: every run converges on the
-earliest parent and a run that lost the race deletes its own.
-
-Reads the notification fields from the environment (set by action.yml), and
-writes ``ts``, ``thread-ts`` and ``channel-id`` to ``$GITHUB_OUTPUT``. Kept as
-a standalone module so the Slack calls are unit-testable with a fake client.
-"""
-
+import http.client
 import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
 from build_payload import build_payload
 
-# Identifies the daily parent message. Matched through message metadata so a
-# human quoting the parent's text, or a reworded parent, never breaks lookup.
 EVENT_TYPE = "cloud_e2e_daily_thread"
 
-# Delay before re-listing after creating a parent, so a parent a concurrent run
-# posted a moment earlier is visible to conversations.history.
 RACE_SETTLE_SECONDS = 2.0
+
+MAX_RETRIES = 5
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
 class SlackError(Exception):
@@ -37,29 +26,53 @@ class SlackError(Exception):
 
 
 class SlackClient:
-    """Minimal Slack Web API client over urllib, so the action needs no dependencies."""
+    """Minimal Slack Web API client over urllib."""
 
-    def __init__(self, token: str, base_url: str = "https://slack.com/api/"):
+    def __init__(self, token: str):
         self._token = token
-        self._base_url = base_url
 
     def call(self, method: str, **params) -> dict:
-        # Form encoding works for both read and write methods; structured
-        # arguments (blocks, metadata) are sent as JSON strings, as Slack expects.
-        fields = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in params.items() if v is not None}
+        # Slack expects blocks and metadata as JSON strings.
+        fields = {
+            k: json.dumps(v) if isinstance(v, (dict, list, bool)) else str(v)
+            for k, v in params.items()
+            if v is not None
+        }
         request = urllib.request.Request(
-            self._base_url + method,
+            "https://slack.com/api/" + method,
             data=urllib.parse.urlencode(fields).encode(),
             headers={"Authorization": f"Bearer {self._token}"},
         )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                body = json.load(response)
-        except OSError as err:
-            raise SlackError(f"{method}: {err}") from err
+        body = self._request_with_retries(method, request)
         if not body.get("ok"):
-            raise SlackError(f"{method}: {body.get('error', 'unknown error')}")
+            error = body.get("error", "unknown error")
+            detail = ""
+            if error == "missing_scope":
+                detail = f" (needed={body.get('needed', '?')}, provided={body.get('provided', '?')})"
+            raise SlackError(f"{method}: {error}{detail}")
         return body
+
+    def _request_with_retries(self, method: str, request: urllib.request.Request) -> dict:
+        last_err: Exception | None = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as err:
+                if err.code not in RETRY_STATUSES or attempt == MAX_RETRIES:
+                    raise SlackError(f"{method}: HTTP {err.code}") from err
+                try:
+                    retry_after = int(err.headers.get("Retry-After", ""))
+                except ValueError:
+                    retry_after = 2**attempt
+                last_err = err
+            except (OSError, http.client.HTTPException, ValueError) as err:
+                if attempt == MAX_RETRIES:
+                    raise SlackError(f"{method}: {err}") from err
+                retry_after = 2**attempt
+                last_err = err
+            time.sleep(retry_after)
+        raise SlackError(f"{method}: retries exhausted") from last_err
 
 
 def ts_key(ts: str) -> tuple[int, int]:
@@ -111,9 +124,12 @@ def ensure_daily_parent(client: SlackClient, channel: str, now: datetime, sleep=
     )["ts"]
 
     # Another run may have created a parent between our lookup and our post.
-    # The earliest one wins; everyone else removes theirs.
     sleep(RACE_SETTLE_SECONDS)
-    earliest = min([mine, *find_daily_parents(client, channel, now)], key=ts_key)
+    try:
+        earliest = min([mine, *find_daily_parents(client, channel, now)], key=ts_key)
+    except SlackError as err:
+        print(f"::warning::Race-dedup re-list failed, using own parent: {err}", file=sys.stderr)
+        return mine
     if earliest != mine:
         try:
             client.call("chat.delete", channel=channel, ts=mine)
@@ -128,23 +144,33 @@ def notify(client: SlackClient, env: dict[str, str], now: datetime, sleep=time.s
     channel = payload["channel"]
 
     thread_ts = ""
-    if env.get("DAILY_THREAD", "true").lower() == "true":
+    thread_err = ""
+    if (env.get("DAILY_THREAD") or "true").lower() != "false":
         try:
             thread_ts = ensure_daily_parent(client, channel, now, sleep)
         except SlackError as err:
-            # A broken thread lookup (e.g. a missing history scope) must never
-            # swallow the failure alert itself, so fall back to posting top level.
+            thread_err = str(err)
             print(f"::warning::Could not use the daily thread, posting top level instead: {err}", file=sys.stderr)
 
     if thread_ts:
         payload["thread_ts"] = thread_ts
+    if thread_err:
+        blocks = payload.get("blocks", [])
+        blocks.append({"type": "context", "elements": [
+            {"type": "mrkdwn", "text": f":warning: Thread lookup failed: {thread_err}"},
+        ]})
+        payload["blocks"] = blocks
     reply = client.call("chat.postMessage", **payload)
     return {"ts": reply["ts"], "thread-ts": thread_ts, "channel-id": reply.get("channel", channel)}
 
 
 def main() -> None:
     env = dict(os.environ)
-    outputs = notify(SlackClient(env["SLACK_BOT_TOKEN"]), env, datetime.now(timezone.utc))
+    try:
+        outputs = notify(SlackClient(env["SLACK_BOT_TOKEN"]), env, datetime.now(timezone.utc))
+    except SlackError as err:
+        print(f"::error::Failed to post notification: {err}", file=sys.stderr)
+        sys.exit(1)
     with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         for key, value in outputs.items():
             output.write(f"{key}={value}\n")

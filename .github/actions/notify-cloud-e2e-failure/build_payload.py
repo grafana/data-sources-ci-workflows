@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
-"""Build the Slack Block Kit payload for a Cloud E2E failure notification.
+"""Build the Slack Block Kit payload for a Cloud E2E failure notification."""
 
-Reads the notification fields from the environment (set by action.yml) and
-prints the ``chat.postMessage`` payload as a single line of JSON to stdout.
-Kept as a standalone module so the field/escaping logic is lintable and
-unit-testable rather than embedded in the composite action's YAML.
-"""
-
-import json
-import os
+DEFAULT_CHANNEL = "C0BQS6PFW14"  # #grafana-data-sources-releases
 
 
 def slack_escape(value: str) -> str:
@@ -33,15 +26,13 @@ def build_payload(env: dict[str, str]) -> dict:
         {"type": "mrkdwn", "text": f"*Branch:*\n{ref_name}"},
         {"type": "mrkdwn", "text": f"*Triggered by:*\n{actor}"},
     ]
-    # Optional fields are only shown when the caller provides them, so an
-    # unset input never renders an empty-valued row.
     for label, key in (("Grafana Cloud URL", "GRAFANA_URL"), ("Datasource version", "DATASOURCE_VERSION")):
         if env.get(key):
             fields.append({"type": "mrkdwn", "text": f"*{label}:*\n{slack_escape(env[key])}"})
     fields.append({"type": "mrkdwn", "text": f"*Commit:*\n`{sha}`"})
 
     return {
-        "channel": env["SLACK_CHANNEL_ID"],
+        "channel": env.get("SLACK_CHANNEL_ID") or DEFAULT_CHANNEL,
         "text": fallback,
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": f":x: *Cloud E2E tests failed*\n{fallback}"}},
@@ -49,7 +40,3 @@ def build_payload(env: dict[str, str]) -> dict:
             {"type": "section", "text": {"type": "mrkdwn", "text": f"<{run_url}|View the failed run>"}},
         ],
     }
-
-
-if __name__ == "__main__":
-    print(json.dumps(build_payload(dict(os.environ))))

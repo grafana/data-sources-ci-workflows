@@ -22,10 +22,9 @@ description: Post a Cloud E2E test failure notification to Slack.
 
 inputs:
   slack-channel-id:
-    description: Slack channel ID to post the message to.
+    description: Slack channel ID to post the message to. Defaults to #grafana-data-sources-releases when empty.
     required: false
-    # #grafana-data-sources-releases
-    default: C0BQS6PFW14
+    default: ""
   daily-thread:
     description: Post as a reply in the channel's shared thread for the current UTC day ("true"), or as a top-level message ("false").
     required: false
@@ -61,9 +60,8 @@ inputs:
     description: URL of the failed workflow run.
     required: true
 
-# Slack assigns a message its identity on post, so a caller that wants to thread
-# under this notification or edit it later has no way to address it unless the
-# identity is handed back. All values come straight from post_notification.py.
+# ts identifies the reply itself (for updates); thread-ts identifies the day's
+# parent (for adding to the thread). All values come from post_notification.py.
 outputs:
   ts:
     description: Timestamp identifying the posted message, used as `ts` to update it.
@@ -78,9 +76,7 @@ outputs:
 runs:
   using: composite
   steps:
-    # The same token send-slack-message uses. Fetched directly because the
-    # daily thread lookup needs conversations.history's response, which
-    # send-slack-message doesn't expose.
+    # send-slack-message hides the conversations.history response the lookup needs.
     - name: Get a Slack token
       id: get-secrets
       uses: grafana/shared-workflows/actions/get-vault-secrets@e46fe1e9a2bf9e618bcf8d8d32f3a7381b45c06d # get-vault-secrets/v2.0.0

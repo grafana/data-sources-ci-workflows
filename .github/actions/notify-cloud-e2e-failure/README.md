@@ -132,15 +132,23 @@ To hand the identity to a later workflow rather than a later step, persist it as
 an artifact: a `workflow_run` consumer can read the triggering run's artifacts,
 but not its job outputs.
 
+### Migrating callers that persist a thread identity
+
+With daily threading enabled, `ts` identifies the failure reply, not the parent.
+Callers that persist a parent timestamp for a later repair workflow, including
+`grafana/jenkins-datasource`'s `cron.yml`, must persist
+`${{ steps.notify.outputs.thread-ts || steps.notify.outputs.ts }}` instead of
+`${{ steps.notify.outputs.ts }}`. Use the caller's notification step ID in place
+of `notify`. The fallback preserves replies when threading is disabled or fails.
+Keep `ts` separately if the repair workflow also updates the failure message.
+
 ## Payload and tests
 
 The Slack Block Kit payload is built by `build_payload.py`, which reads the inputs from
-the environment and returns the `chat.postMessage` payload. `post_notification.py` finds
-or creates the daily thread and sends it, calling the Slack Web API directly (standard
-library only) because `send-slack-message` doesn't expose the `conversations.history`
-response the lookup needs. Keeping it in a standalone module rather than inline in `action.yml` means the field
-selection (including the optional `grafana-url` / `datasource-version` rows) and the mrkdwn
-escaping are lintable and unit-tested.
+the environment and returns the `chat.postMessage` payload; keeping it separate means the
+field selection and mrkdwn escaping are lintable and unit-tested. `post_notification.py`
+finds or creates the daily thread and posts the payload, calling the Slack Web API directly
+(standard library only) because `send-slack-message` doesn't expose `conversations.history`.
 
 Run the tests from the action directory:
 
