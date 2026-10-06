@@ -6,7 +6,7 @@ Run with: python3 -m unittest test_build_payload
 
 import unittest
 
-from build_payload import build_payload, slack_escape
+from build_payload import DEFAULT_CHANNEL, build_payload, slack_escape
 
 BASE_ENV = {
     "SLACK_CHANNEL_ID": "C0APH909GFK",
@@ -25,6 +25,14 @@ def field_texts(payload: dict) -> list[str]:
 
 
 class BuildPayloadTest(unittest.TestCase):
+    def test_missing_or_empty_channel_uses_default(self):
+        for channel in (None, ""):
+            with self.subTest(channel=channel):
+                env = {key: value for key, value in BASE_ENV.items() if key != "SLACK_CHANNEL_ID"}
+                if channel is not None:
+                    env["SLACK_CHANNEL_ID"] = channel
+                self.assertEqual(build_payload(env)["channel"], DEFAULT_CHANNEL)
+
     def test_channel_and_fallback(self):
         payload = build_payload(BASE_ENV)
         self.assertEqual(payload["channel"], "C0APH909GFK")
