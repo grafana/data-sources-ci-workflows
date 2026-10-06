@@ -1,8 +1,8 @@
 # Builds a Docker image containing Grafana with a bundled datasource plugin.
 # The plugin is copied from a locally unpacked, signed dist/ directory.
 #
-# Image tag format: <plugin-version>-<grafana-version>-<short-sha>[-debug]-amd64
-# Example: 4.20.0-13.3.0-58e7485-amd64
+# Image tag format: <plugin-version>-<grafana-version>-<grafana-build>-<short-sha>[-debug]-amd64
+# Example: 4.20.0-13.3.0-36621942670-58e7485-amd64
 #
 # Build args:
 #   GRAFANA_IMAGE     - Full grafana-pro image reference (required)
