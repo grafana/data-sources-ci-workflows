@@ -157,6 +157,7 @@ jobs:
     outputs:
       grafana-image: ${{ steps.resolve.outputs.grafana-image }}
       grafana-version: ${{ steps.resolve.outputs.grafana-version }}
+      grafana-build: ${{ steps.resolve.outputs.grafana-build }}
     steps:
       # deployment_tools is private, so reading one line out of it needs an App token rather than
       # the workflow's own GITHUB_TOKEN. Same app and action the release-please grant already uses,
@@ -207,18 +208,36 @@ jobs:
 
           [ -n "$image" ] || { echo "::error::could not resolve a Grafana base image"; exit 1; }
 
-          # The tag's leading semver is the Grafana version, and it becomes the middle field of the
-          # plugin image tag. Anything else means the base tag shape changed and the tag contract
-          # below would silently produce a wrong version.
+          # The base tag is <X.Y.Z>-<build>-amd64. Both fields go into the plugin image tag, and
+          # the build's dashes become dots so it stays one field. Any other shape corrupts the tag.
           version="$(printf '%s' "$image" | sed -E 's/.*:([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
-          case "$version" in
-            [0-9]*.[0-9]*.[0-9]*) : ;;
-            *) echo "::error::no plain X.Y.Z Grafana version in base tag: $image"; exit 1 ;;
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::no plain X.Y.Z Grafana version in base tag: $image"; exit 1
+          fi
+          base_tag="${image##*:}"
+          case "$base_tag" in
+            "$version"-*-amd64) : ;;
+            *) echo "::error::Grafana base tag is not <X.Y.Z>-<build>-amd64: $image"; exit 1 ;;
           esac
+          # Two builds of one Grafana version get distinct plugin image tags, so a base refresh is
+          # deliverable and detectable.
+          build="${base_tag#"${version}-"}"
+          build="$(printf '%s' "${build%-amd64}" | tr '-' '.')"
+          build_shape='^[0-9A-Za-z]([0-9A-Za-z.]*[0-9A-Za-z])?$'
+          if printf '%s' "$build" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
+             ! printf '%s' "$build" | grep -Eq "$build_shape"; then
+            echo "::error::build id between ${version}- and -amd64 must be letters, digits and" \
+                 "dots, must start and end with a letter or digit, and must not be shaped like" \
+                 "a version (X.Y.Z): $image"
+            exit 1
+          fi
 
-          echo "grafana-image=$image" >> "$GITHUB_OUTPUT"
-          echo "grafana-version=$version" >> "$GITHUB_OUTPUT"
-          echo "base=$image version=$version"
+          {
+            echo "grafana-image=$image"
+            echo "grafana-version=$version"
+            echo "grafana-build=$build"
+          } >> "$GITHUB_OUTPUT"
+          echo "base=$image version=$version build=$build"
 
   bundle:
     name: Bundle, smoke and push
@@ -255,6 +274,7 @@ jobs:
         env:
           PLUGIN_JSON: ${{ needs.build.outputs.plugin }}
           GRAFANA_VERSION: ${{ needs.resolve-grafana-image.outputs.grafana-version }}
+          GRAFANA_BUILD: ${{ needs.resolve-grafana-image.outputs.grafana-build }}
           GAR_REPOSITORY: ${{ inputs.gar-repository }}
           IS_DEBUG: ${{ inputs.debug == 'true' }}
           SHA: ${{ inputs.ref || github.sha }}
@@ -288,9 +308,9 @@ jobs:
             package="debug/$plugin_id"
           fi
 
-          # This tag shape is a contract with deployment_tools, which parses it to recover the
-          # plugin version and to decide whether a waves entry is a bundled image. Do not restyle it.
-          tag="${plugin_version}-${GRAFANA_VERSION}-${short_sha}${debug_suffix}-amd64"
+          # The tag is a contract: the deployment tooling parses out the plugin version and the
+          # Grafana build id and uses the shape to detect bundled image tags. Do not restyle it.
+          tag="${plugin_version}-${GRAFANA_VERSION}-${GRAFANA_BUILD}-${short_sha}${debug_suffix}-amd64"
           image="us-docker.pkg.dev/grafanalabs-global/${gar_repository}/${package}:${tag}"
 
           # The per-arch zip, not the universal one: it is a tenth of the size and carries only the

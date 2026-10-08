@@ -10,9 +10,10 @@ unit-testable rather than embedded in the composite action's YAML.
 import json
 import os
 
-# #ds-release. The single source of the default: action.yml deliberately defaults its
-# input to the empty string, because a caller that passes an explicitly empty value
-# bypasses a composite input's default entirely, and the notification then goes nowhere.
+# #grafana-data-sources-releases. The single source of the default: action.yml
+# deliberately defaults its input to the empty string, because a caller that passes an
+# explicitly empty value bypasses a composite input's default entirely, and the
+# notification then goes nowhere.
 DEFAULT_CHANNEL = "C0BQS6PFW14"
 
 
