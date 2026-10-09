@@ -14,7 +14,9 @@ def build_payload(env: dict[str, str]) -> dict:
     repo = slack_escape(env["REPO"])
     run_stage = slack_escape(env.get("RUN_STAGE", ""))
     ref_name = slack_escape(env.get("REF_NAME", ""))
-    actor = slack_escape(env.get("ACTOR", ""))
+    # github.actor on a schedule-triggered run isn't the person who triggered
+    # it, so don't show a username in that case.
+    actor = "scheduler" if env.get("EVENT_NAME") == "schedule" else slack_escape(env.get("ACTOR", ""))
     sha = slack_escape(env.get("SHA", "")[:8])
     run_url = env["RUN_URL"]
 

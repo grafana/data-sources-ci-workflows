@@ -77,6 +77,7 @@ jobs:
           run-stage: nightly
           ref-name: ${{ github.ref_name }}
           actor: ${{ github.actor }}
+          event-name: ${{ github.event_name }}
           sha: ${{ github.sha }}
           run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 ```
@@ -94,6 +95,7 @@ jobs:
 | `datasource-version` | No       | Datasource plugin version under test.                                                                   |
 | `ref-name`           | No       | Git ref name the run was triggered on (e.g. `github.ref_name`).                                         |
 | `actor`              | No       | User that triggered the run (e.g. `github.actor`).                                                       |
+| `event-name`         | No       | Event that triggered the run (e.g. `github.event_name`). `"schedule"` shows "scheduler" instead of `actor`. |
 | `sha`                | No       | Commit SHA associated with the run (e.g. `github.sha`).                                                 |
 
 ## Outputs

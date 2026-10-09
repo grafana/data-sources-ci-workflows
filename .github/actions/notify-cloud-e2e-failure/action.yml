@@ -52,6 +52,13 @@ inputs:
     description: User that triggered the run (e.g. github.actor).
     required: false
     default: ""
+  event-name:
+    description: >-
+      Event that triggered the run (e.g. github.event_name). When "schedule",
+      the "Triggered by" field shows "scheduler" instead of actor, since
+      github.actor on a scheduled run isn't the person who triggered it.
+    required: false
+    default: ""
   sha:
     description: Commit SHA associated with the run (e.g. github.sha).
     required: false
@@ -97,6 +104,7 @@ runs:
         DATASOURCE_VERSION: ${{ inputs.datasource-version }}
         REF_NAME: ${{ inputs.ref-name }}
         ACTOR: ${{ inputs.actor }}
+        EVENT_NAME: ${{ inputs.event-name }}
         SHA: ${{ inputs.sha }}
         RUN_URL: ${{ inputs.run-url }}
       run: python3 "$GITHUB_ACTION_PATH/post_notification.py"
