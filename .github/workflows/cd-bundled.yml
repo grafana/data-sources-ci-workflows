@@ -91,11 +91,12 @@ on:
         default: grafana-datasources-cd
       per-merge-frontend:
         description: >-
-          Opt in to per-merge frontends ('true'/'false'). The image tag slot then carries the full
-          commit SHA, or v<version> for a release that is not a pre-release.
+          Per-merge frontend ('true'/'false'). With 'true', the image tag slot carries the full
+          commit SHA, or v<version> for a release that is not a pre-release. 'false' keeps the
+          7-character cut.
         type: string
         required: false
-        default: 'false'
+        default: 'true'
       debug:
         description: >-
           Build a debug image. Uses the BuildDebugLinux backend target and suffixes the tag with
@@ -306,7 +307,7 @@ jobs:
             gar_repository="docker-$(printf '%s' "${GITHUB_REPOSITORY##*/}" | tr '_' '-')-prod"
           fi
 
-          # An opted-in slot names the frontend: v<version> for a release, the full commit otherwise.
+          # The slot names the frontend: v<version> for a release, the full commit for a push or a commit dispatch.
           slot="${SHA:0:7}"
           if [ "$PER_MERGE_FRONTEND" = "true" ]; then
             if [ "$BUILD_REF" = "v${plugin_version}" ]; then

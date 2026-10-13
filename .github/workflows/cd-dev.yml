@@ -56,13 +56,6 @@ on:
         type: boolean
         required: false
         default: true
-      per-merge-frontend:
-        description: >-
-          Opt in to per-merge frontends ('true'/'false'). The dev catalog publish then also runs
-          for Renovate merges, so every merge has a per-commit frontend version.
-        type: string
-        required: false
-        default: 'false'
 
 defaults:
   run:
@@ -81,8 +74,6 @@ permissions:
 jobs:
   publish-to-catalog:
     name: Publish to Dev Catalog
-    # Renovate merges skip the publish unless the caller opts in to per-merge frontends.
-    if: ${{ github.actor != 'renovate-sh-app[bot]' || inputs.per-merge-frontend == 'true' }}
     uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v11.1.1 # zizmor: ignore[unpinned-uses]
     permissions:
       attestations: write
