@@ -89,6 +89,14 @@ on:
         type: string
         required: false
         default: grafana-datasources-cd
+      per-merge-frontend:
+        description: >-
+          Per-merge frontend ('true'/'false'). With 'true', the image tag slot carries the full
+          commit SHA, or v<version> for a release that is not a pre-release. 'false' keeps the
+          7-character cut.
+        type: string
+        required: false
+        default: 'true'
       debug:
         description: >-
           Build a debug image. Uses the BuildDebugLinux backend target and suffixes the tag with
@@ -278,6 +286,8 @@ jobs:
           GAR_REPOSITORY: ${{ inputs.gar-repository }}
           IS_DEBUG: ${{ inputs.debug == 'true' }}
           SHA: ${{ inputs.ref || github.sha }}
+          BUILD_REF: ${{ inputs.ref || github.event.release.tag_name }}
+          PER_MERGE_FRONTEND: ${{ inputs.per-merge-frontend }}
         run: |
           set -euo pipefail
 
@@ -297,7 +307,15 @@ jobs:
             gar_repository="docker-$(printf '%s' "${GITHUB_REPOSITORY##*/}" | tr '_' '-')-prod"
           fi
 
-          short_sha="${SHA:0:7}"
+          # The slot names the frontend: v<version> for a release, the full commit for a push or a commit dispatch.
+          slot="${SHA:0:7}"
+          if [ "$PER_MERGE_FRONTEND" = "true" ]; then
+            if [ "$BUILD_REF" = "v${plugin_version}" ]; then
+              [[ "$plugin_version" == *-* ]] || slot="$BUILD_REF"
+            elif [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              slot="$SHA"
+            fi
+          fi
           debug_suffix=""
           package="$plugin_id"
           if [ "$IS_DEBUG" = "true" ]; then
@@ -310,7 +328,7 @@ jobs:
 
           # The tag is a contract: the deployment tooling parses out the plugin version and the
           # Grafana build id and uses the shape to detect bundled image tags. Do not restyle it.
-          tag="${plugin_version}-${GRAFANA_VERSION}-${GRAFANA_BUILD}-${short_sha}${debug_suffix}-amd64"
+          tag="${plugin_version}-${GRAFANA_VERSION}-${GRAFANA_BUILD}-${slot}${debug_suffix}-amd64"
           image="us-docker.pkg.dev/grafanalabs-global/${gar_repository}/${package}:${tag}"
 
           # The per-arch zip, not the universal one: it is a tenth of the size and carries only the
