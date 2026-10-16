@@ -1,0 +1,6 @@
+{
+  ".": "0.0.0",
+  ".github/actions/bundle-plugin-image": "0.0.0",
+  ".github/actions/notify-bundled-image-failure": "0.0.0",
+  ".github/actions/notify-cloud-e2e-failure": "0.0.0"
+}
