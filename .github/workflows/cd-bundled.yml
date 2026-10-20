@@ -34,6 +34,10 @@ name: Datasource - Build and push bundled image
 on:
   workflow_call:
     inputs:
+      golangci-lint-version:
+        description: golangci-lint version to use. Left empty, use the plugin CI default.
+        type: string
+        required: false
       ref:
         description: Commit to build. Defaults to the SHA that triggered the caller.
         type: string
@@ -148,6 +152,7 @@ jobs:
     with:
       branch: ${{ inputs.ref || github.sha }}
       plugin-directory: ${{ inputs.plugin-directory }}
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
       run-playwright: false
       run-trufflehog: false
       backend-build-target: ${{ inputs.debug == 'true' && 'BuildDebugLinux' || '' }}
