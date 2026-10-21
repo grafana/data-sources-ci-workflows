@@ -18,6 +18,10 @@ name: Datasource - Publish plugin
 on:
   workflow_call:
     inputs:
+      golangci-lint-version:
+        description: golangci-lint version to use. Left empty, use the plugin CI default.
+        type: string
+        required: false
       # Manual-dispatch pass-throughs. The plugin's `publish.yml` collects these
       # from its own `workflow_dispatch` inputs and forwards them. They are ignored
       # on the `release` event (the `docs` job reads github.event.release instead).
@@ -70,6 +74,7 @@ jobs:
       pull-requests: read
     with:
       branch: ${{ github.event.release.tag_name }}
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
       environment: prod
       docs-only: true
       scopes: grafana_cloud
@@ -91,6 +96,7 @@ jobs:
       pull-requests: read
     with:
       branch: ${{ inputs.branch }}
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
       environment: ${{ inputs.environment }}
       scopes: ${{ inputs.scopes }}
       docs-only: ${{ inputs.docs-only }}

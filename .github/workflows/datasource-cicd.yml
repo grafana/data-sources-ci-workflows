@@ -20,6 +20,10 @@ name: Datasource - CI/CD
 on:
   workflow_call:
     inputs:
+      golangci-lint-version:
+        description: golangci-lint version to use. Left empty, use the plugin CI default.
+        type: string
+        required: false
       trufflehog-exclude-detectors:
         description: |
           Comma-separated list of TruffleHog detector types to exclude, forwarded
@@ -49,6 +53,7 @@ jobs:
       contents: read
       id-token: write
     with:
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
       # Ensure PR builds produce unique plugin versions.
       plugin-version-suffix: ${{ github.event.pull_request.head.sha }}
 
@@ -111,6 +116,7 @@ jobs:
     with:
       branch: ${{ needs.release-please.outputs.tag_name }}
       environment: prod
+      golangci-lint-version: ${{ inputs.golangci-lint-version }}
       disable-docs-publishing: true
       disable-github-release: true
       release-reference-regex: '^(main|v\d+\.\d+\.\d+)$'
