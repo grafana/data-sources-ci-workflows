@@ -74,7 +74,7 @@ permissions:
 jobs:
   publish-to-catalog:
     name: Publish to Dev Catalog
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v11.1.1 # zizmor: ignore[unpinned-uses]
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1 # zizmor: ignore[unpinned-uses]
     permissions:
       attestations: write
       contents: write
