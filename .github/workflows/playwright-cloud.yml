@@ -119,6 +119,10 @@ jobs:
       id-token: write
 
     steps:
+      - name: Record run start time
+        id: run-started
+        run: echo "at=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -226,3 +230,29 @@ jobs:
             --test-env GRAFANA_URL \
             --test-runner playwright \
             --test-verbose
+
+      # Callers share one e2e user, so only sessions with this login's client IP, created after the job started, are revoked.
+      - name: Log out this run's e2e sessions
+        if: always() && steps.run-bench-tests.outcome != 'skipped'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ fromJSON(steps.get-secrets.outputs.secrets).PLAYWRIGHT_GRAFANA_PASSWORD }}
+          GRAFANA_ADMIN_USER: ${{ fromJSON(steps.get-secrets.outputs.secrets).PLAYWRIGHT_GRAFANA_USERNAME }}
+          RUN_STARTED_AT: ${{ steps.run-started.outputs.at }}
+        run: |
+          set -euo pipefail
+          jar=$(mktemp)
+          jq -n '{user: env.GRAFANA_ADMIN_USER, password: env.GRAFANA_ADMIN_PASSWORD}' |
+            curl -fsS -o /dev/null -c "$jar" -H 'Content-Type: application/json' --data-binary @- "$GRAFANA_URL/login"
+          ids=$(curl -fsS --max-time 180 -b "$jar" "$GRAFANA_URL/api/user/auth-tokens" | jq --argjson since "$RUN_STARTED_AT" '
+            (map(select(.isActive)) | first | .clientIp) as $ip
+            | .[] | select((.isActive | not) and .clientIp == $ip and (.createdAt | fromdateiso8601) >= $since) | .id')
+          revoked=0
+          for id in $ids; do
+            curl -fsS -o /dev/null -b "$jar" -H 'Content-Type: application/json' \
+              -d "{\"authTokenId\": $id}" "$GRAFANA_URL/api/user/revoke-auth-token"
+            revoked=$((revoked + 1))
+          done
+          curl -fsS -o /dev/null -b "$jar" "$GRAFANA_URL/logout"
+          echo "Logged out $revoked e2e session(s) from this run"
