@@ -153,6 +153,14 @@ jobs:
       branch: ${{ inputs.ref || github.sha }}
       plugin-directory: ${{ inputs.plugin-directory }}
       golangci-lint-version: ${{ inputs.golangci-lint-version }}
+      # This job signs a release build, so it follows cd.yml's rule and never restores or saves
+      # caches. cd.yml hardcodes these to false since ci-cd-workflows v12; calling ci.yml directly
+      # leaves them at their default of true.
+      go-setup-caching: false
+      node-setup-caching: false
+      go-tooling-caching: false
+      trufflehog-caching: false
+      playwright-caching: false
       run-playwright: false
       run-trufflehog: false
       backend-build-target: ${{ inputs.debug == 'true' && 'BuildDebugLinux' || '' }}
