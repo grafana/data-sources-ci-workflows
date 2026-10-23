@@ -64,7 +64,8 @@ on:
         description: >-
           Grafana base image to bundle onto. Left empty, it is read from the dev0 entry of
           deployment_tools grafana-datasources/waves/api_server.jsonnet, which needs a GATB grant
-          on the caller for that repository.
+          on the caller for that repository. The image should be the entire image reference, including the repository e.g:
+          us-docker.pkg.dev/grafanalabs-test/docker-grafana/grafana:13.3.0-12345678-amd64.
         type: string
         required: false
         default: ""
