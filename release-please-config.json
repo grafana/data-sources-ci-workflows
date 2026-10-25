@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-v-in-tag": true,
+  "tag-separator": "/",
+  "separate-pull-requests": true,
+  "bootstrap-sha": "f864048d3f12f93c6b4ddcd756f7aa522917e73a",
+  "changelog-sections": [
+    { "type": "feat", "section": "🎉 Features" },
+    { "type": "fix", "section": "🐛 Bug Fixes" },
+    { "type": "perf", "section": "⚡ Performance Improvements" },
+    { "type": "refactor", "section": "♻️ Code Refactoring" },
+    { "type": "docs", "section": "📝 Documentation" },
+    { "type": "test", "section": "✅ Tests" },
+    { "type": "build", "section": "🏗️ Builds" },
+    { "type": "ci", "section": "🤖 Continuous Integration" },
+    { "type": "revert", "section": "⏪ Reverts" },
+    { "type": "chore", "section": "🔧 Chores", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "data-sources-ci-workflows",
+      "include-component-in-tag": false,
+      "exclude-paths": [
+        ".github/actions/bundle-plugin-image",
+        ".github/actions/notify-bundled-image-failure",
+        ".github/actions/notify-cloud-e2e-failure"
+      ]
+    },
+    ".github/actions/bundle-plugin-image": {
+      "package-name": "bundle-plugin-image"
+    },
+    ".github/actions/notify-bundled-image-failure": {
+      "package-name": "notify-bundled-image-failure"
+    },
+    ".github/actions/notify-cloud-e2e-failure": {
+      "package-name": "notify-cloud-e2e-failure"
+    }
+  }
+}
