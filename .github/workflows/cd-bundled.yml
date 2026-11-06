@@ -64,7 +64,8 @@ on:
         description: >-
           Grafana base image to bundle onto. Left empty, it is read from the dev0 entry of
           deployment_tools grafana-datasources/waves/api_server.jsonnet, which needs a GATB grant
-          on the caller for that repository.
+          on the caller for that repository. The image should be the entire image reference, including the repository e.g:
+          us-docker.pkg.dev/grafanalabs-test/docker-grafana/grafana:13.3.0-12345678-amd64.
         type: string
         required: false
         default: ""
@@ -145,7 +146,7 @@ jobs:
   build:
     name: Build and sign
     if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(main): release') }}"
-    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v11.1.1
+    uses: grafana/plugin-ci-workflows/.github/workflows/ci.yml@ci-cd-workflows/v12.1.0
     permissions:
       contents: read
       id-token: write
@@ -153,6 +154,14 @@ jobs:
       branch: ${{ inputs.ref || github.sha }}
       plugin-directory: ${{ inputs.plugin-directory }}
       golangci-lint-version: ${{ inputs.golangci-lint-version }}
+      # This job signs a release build, so it follows cd.yml's rule and never restores or saves
+      # caches. cd.yml hardcodes these to false since ci-cd-workflows v12; calling ci.yml directly
+      # leaves them at their default of true.
+      go-setup-caching: false
+      node-setup-caching: false
+      go-tooling-caching: false
+      trufflehog-caching: false
+      playwright-caching: false
       run-playwright: false
       run-trufflehog: false
       backend-build-target: ${{ inputs.debug == 'true' && 'BuildDebugLinux' || '' }}
@@ -184,7 +193,7 @@ jobs:
         id: token
         if: inputs.grafana-image == ''
         continue-on-error: true
-        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        uses: grafana/shared-workflows/actions/create-github-app-token@5bbb526b1728ca57fbe1750c4c27ab6ab06171c2 # create-github-app-token/v1.0
         with:
           github_app: updater-for-ci
           # Release events run at the tag ref, which the default set's branch scope
