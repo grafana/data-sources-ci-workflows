@@ -2,8 +2,9 @@
 # Reusable workflow that adds newly opened issues and pull requests to a GitHub
 # (org-level) project board and sets their initial Status field.
 #
-# Callers must trigger this on `issues` / `pull_request` `opened` events and pass
-# the target `project-url`. A GitHub App token is created to authenticate against
+# Callers must trigger this on `issues` and `pull_request_target` `opened` events
+# and pass the target `project-url`. Under `pull_request`, fork PRs get no OIDC
+# token and the job fails. A GitHub App token is created to authenticate against
 # the org project, so the calling job needs `id-token: write` available.
 
 name: Add issues & PRs to a GitHub project
@@ -49,4 +50,4 @@ jobs:
           github-token: ${{ steps.get-github-token.outputs.token }}
           item-id: ${{ steps.add-to-project.outputs.itemId }}
           field-keys: Status
-          field-values: ${{ github.event_name == 'pull_request' && (github.event.pull_request.user.login == 'renovate-sh-app[bot]' && 'Dependencies' || 'PR Need Review') || 'Incoming' }}
+          field-values: ${{ github.event.pull_request && (github.event.pull_request.user.login == 'renovate-sh-app[bot]' && 'Dependencies' || 'PR Need Review') || 'Incoming' }}
