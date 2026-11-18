@@ -44,9 +44,10 @@ grep -q '"signatureType": *"grafana"' "${manifest}" \
   || fail "MANIFEST.txt is not a grafana-type signature"
 
 echo "== Locate the linux/amd64 backend binary =="
+# An app plugin nests its datasource (and backend) one level down, e.g. datasource/gpx_*.
 binary=""
-for f in "${dist}"/gpx_*_linux_amd64; do
-  if [ -e "${f}" ]; then binary="$(basename "${f}")"; break; fi
+for f in "${dist}"/gpx_*_linux_amd64 "${dist}"/*/gpx_*_linux_amd64; do
+  if [ -e "${f}" ]; then binary="${f#"${dist}/"}"; break; fi
 done
 [ -n "${binary}" ] || fail "no gpx_*_linux_amd64 backend binary under ${PLUGIN_DIR}"
 echo "backend binary: ${binary}"
