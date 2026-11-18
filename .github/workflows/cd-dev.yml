@@ -10,9 +10,9 @@ on:
   workflow_call:
     inputs:
       go-version:
-        description: Go toolchain version to use.
+        description: Go toolchain version to use. Leave empty to read it from go.mod.
         type: string
-        required: true
+        required: false
       golangci-lint-version:
         description: golangci-lint version to use.
         type: string
