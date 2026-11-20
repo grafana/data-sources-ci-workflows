@@ -93,7 +93,7 @@ jobs:
       statuses: read
       # Rerunning runs that infrastructure cancelled, as the sweeper did.
       actions: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-arm64-small
     outputs:
       prs: ${{ steps.collect.outputs.prs }}
     steps:
@@ -241,7 +241,7 @@ jobs:
       # `gh pr view` (used by Claude) also reads commit statuses.
       statuses: read
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-arm64-small
     steps:
       # The caller's default branch, not the PR head: Claude reads the
       # repository's own code to judge how the updated package is used, and

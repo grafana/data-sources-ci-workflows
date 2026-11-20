@@ -1,0 +1,5 @@
+# Labels of the Grafana self-hosted runners that workflows here run on, so
+# actionlint accepts them. GitHub-hosted labels need no entry.
+self-hosted-runner:
+  labels:
+    - ubuntu-arm64-small
